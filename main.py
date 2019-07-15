@@ -48,8 +48,9 @@ class DialogLoader(object):
          dateEnd=self._conv_data(self.params['dateEnd'])
          dateStep=timedelta(days=self.params['dateStep'])
          dateStart=dateLast+dateStep
-         if (self.params['dateStep']>0 and dateStart>dateEnd) or
-            (self.params['dateStep']<0 and dateStart<dateEnd):
+         if self.params['dateStep']>0 and dateStart>dateEnd:
+            self._ended=True
+         elif self.params['dateStep']<0 and dateStart<dateEnd:
             self._ended=True
          else:
             self.params['dateStart']=dateStart.strftime('%Y%m%d')
