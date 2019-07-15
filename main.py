@@ -10,9 +10,60 @@ urwid.set_encoding("UTF-8")
 
 from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today
 
+class DialogLoader(object):
+   def __init__(self, apiCaller, login, query, dateStart='today', dateEnd=True, dateStep=1, limitDates=5, limitResults=5):
+      self.params=locals()
+      self.params.pop('self')
+      self.params.pop('apiCaller')
+      self._apiCaller=apiCaller
+      self._canAutoStop=self._check_canAutoStop(self.params['dateEnd'])
+      self._ended=False
+
+   @staticmethod
+   def _check_canAutoStop(dateEnd):
+      s=dateEnd
+      if s is True or s is False or s is None: return False
+      return True
+
+   @staticmethod
+   def _conv_data(date):
+      if isinstance(date, str):
+         return datetime.strptime(date, '%Y%m%d')
+      elif isinstance(date, int):
+         return datetime.date.fromtimestamp(date)
+      raise ValueError
+
+   def _load(self):
+      p=dict(self.params, asDialogs=True, returnFull=True, onlyCount=False)
+      return self._apiCaller.filterMessages(**p)
+
+   def load(self):
+      if self._ended:
+         return False, False
+      data, targets=self._load()
+      if not targets:
+         return False, False
+      if self._canAutoStop:
+         dateLast=self._conv_data(data[-1][0])
+         dateEnd=self._conv_data(self.params['dateEnd'])
+         dateStep=timedelta(days=self.params['dateStep'])
+         dateStart=dateLast+dateStep
+         if (self.params['dateStep']>0 and dateStart>dateEnd) or
+            (self.params['dateStep']<0 and dateStart<dateEnd):
+            self._ended=True
+         else:
+            self.params['dateStart']=dateStart.strftime('%Y%m%d')
+      return data, targets
+
+   def __iter__(self):
+      while True:
+         data, targets=self.load()
+         if data is False:
+            raise StopIteration
+         yield data, targets
+
 class FiltersList(urwid.SimpleFocusListWalker):
    def __init__(self):
-      grp=[]
       data=[
          FilterItem('#inbox', {'name':'Inbox', 'descr':'Untagged dialogs'}),
          FilterItem('#backlog', {'name':'Backlog', 'descr':'Todo tasks'}),
@@ -30,7 +81,6 @@ class FiltersList(urwid.SimpleFocusListWalker):
 
 class DialogList(urwid.SimpleFocusListWalker):
    def __init__(self):
-      grp=[]
       data=[
          DialogHeader('d1', [
             {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
