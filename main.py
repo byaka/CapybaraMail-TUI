@@ -69,7 +69,7 @@ class FiltersList(urwid.SimpleFocusListWalker):
          FilterItem('#inbox', {'name':'Inbox', 'descr':'Untagged dialogs'}),
          FilterItem('#backlog', {'name':'Backlog', 'descr':'Todo tasks'}),
          FilterItem('#notes', {'name':'Notes', 'descr':'Useful info'}),
-         FilterItem('#Custom 1', {'name':'Inbox', 'descr':'Created by user'}),
+         FilterItem('#custom1', {'name':'Custom 1', 'descr':'Created by user'}),
          Text('Filters:', align='center', wrap='space'),
          FilterItem('#done', {'name':'Done', 'descr':'Completed  tasks'}, showCounter=False),
          FilterItem('#spam', {'name':'Spam', 'descr':'Marked as spam'}),
