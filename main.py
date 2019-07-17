@@ -11,14 +11,20 @@ urwid.set_encoding("UTF-8")
 from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today
 
 class DialogLoader(object):
-   def __init__(self, apiCaller, login, query, dateStart='today', dateEnd=True, dateStep=1, limitDates=5, limitResults=5):
-      self.params=locals()
-      self.params.pop('self')
-      self.params.pop('apiCaller')
+   def __init__(self, apiCaller, login, query, dateStart='today', dateEnd=True, direction=1, limitDates=5, limitResults=5):
+      assert dateStep
+      assert direction==1 or direction==-1
+      self.__params=locals()
+      self.__params.pop('self')
+      self.__params.pop('apiCaller')
+      self.__params.pop('direction')
+      self._dateStep=self.__params['dateStep']=direction
+      self._loaded=False
+      self.__cache={}
       self._firstDate=None
       self._lastDate=None
       self._apiCaller=apiCaller
-      self._canAutoStop=self._check_canAutoStop(self.params['dateEnd'])
+      self._canAutoStop=self._check_canAutoStop(self.__params['dateEnd'])
       self._ended=False
 
    @staticmethod
@@ -29,33 +35,56 @@ class DialogLoader(object):
 
    @staticmethod
    def _conv_date(date):
-      if isinstance(date, str):
+      if isinstance(date, (datetime.datetime, datetime.date)):
+         return date
+      elif isinstance(date, str):
          return datetime.strptime(date, '%Y%m%d')
       elif isinstance(date, int):
          return datetime.date.fromtimestamp(date)
       raise ValueError
 
    def _load(self):
-      p=dict(self.params, asDialogs=True, returnFull=True, onlyCount=False)
+      p=dict(self.__params, asDialogs=True, returnFull=True, onlyCount=False)
       return self._apiCaller.filterMessages(**p)
+
+   def isLoaded(self):
+      return self._loaded
+
+   def isEnded(self):
+      return self._ended
+
+   def dateWasLoaded(self, date):
+      if not self._loaded:
+         raise RuntimeError('Data not loaded yet')
+      date=self._conv_date(date)
+      if self._dateStep>0:
+         if date>=self._firstDate and date<=self._lastDate: return True
+      else:
+         if date<=self._firstDate and date>=self._lastDate: return True
+      return False
 
    def load(self):
       if self._ended:
          return False, False
       data, targets=self._load()
       if not targets:
+         self._ended=True
          return False, False
+      self.__cache.update(data)
+      dateLast=self._lastDate=self._conv_date(data[-1][0])
+      if self._firstDate is None:
+         self._firstDate=self._conv_date(data[0][0])
+      self._loaded=True
       if self._canAutoStop:
-         dateLast=self._conv_date(data[-1][0])
-         dateEnd=self._conv_date(self.params['dateEnd'])
-         dateStep=timedelta(days=self.params['dateStep'])
+         dateEnd=self._conv_date(self.__params['dateEnd'])
+         dateStep=timedelta(days=self._dateStep)
          dateStart=dateLast+dateStep
-         if self.params['dateStep']>0 and dateStart>dateEnd:
+         if self._dateStep>0 and dateStart>dateEnd:
             self._ended=True
-         elif self.params['dateStep']<0 and dateStart<dateEnd:
+         elif self._dateStep<0 and dateStart<dateEnd:
             self._ended=True
          else:
-            self.params['dateStart']=dateStart.strftime('%Y%m%d')
+            self.__params['dateStart']=dateStart.strftime('%Y%m%d')
       return data, targets
 
    def __iter__(self):
@@ -64,6 +93,27 @@ class DialogLoader(object):
          if data is False:
             raise StopIteration
          yield data, targets
+
+   def get(self, date, direction):
+      assert direction==1 or direction==-1
+      if date in self.__cache:
+         return date, self.__cache[date]
+      date=self._conv_date(date)
+      if self.dateWasLoaded(date):
+         d=timedelta(days=direction)
+         while True:
+            date+=d
+            dateS=date.strftime('%Y%m%d')
+            if dateS in self.__cache:
+               return dateS, self.__cache[dateS]
+      else:
+         if direction==self._dateStep:
+            data, targets=self.load()
+            return (False, False) if targets is False else data[0]
+         else:
+            #~ если дата крайняя и направление не совпадает с исходным
+            pass
+
 
 class FiltersList(urwid.SimpleFocusListWalker):
    def __init__(self):

@@ -142,7 +142,6 @@ class FilterItem(SelectableMultiStyleWidget,):
 class DialogWalker(urwid.ListWalker):
    def __init__(self, loader):
       self._loader=loader
-      self._loaded=False
       self._data={}
       self.focus={'date':None, 'index':0}
 
