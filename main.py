@@ -15,6 +15,8 @@ class DialogLoader(object):
       self.params=locals()
       self.params.pop('self')
       self.params.pop('apiCaller')
+      self._firstDate=None
+      self._lastDate=None
       self._apiCaller=apiCaller
       self._canAutoStop=self._check_canAutoStop(self.params['dateEnd'])
       self._ended=False
@@ -26,7 +28,7 @@ class DialogLoader(object):
       return True
 
    @staticmethod
-   def _conv_data(date):
+   def _conv_date(date):
       if isinstance(date, str):
          return datetime.strptime(date, '%Y%m%d')
       elif isinstance(date, int):
@@ -44,8 +46,8 @@ class DialogLoader(object):
       if not targets:
          return False, False
       if self._canAutoStop:
-         dateLast=self._conv_data(data[-1][0])
-         dateEnd=self._conv_data(self.params['dateEnd'])
+         dateLast=self._conv_date(data[-1][0])
+         dateEnd=self._conv_date(self.params['dateEnd'])
          dateStep=timedelta(days=self.params['dateStep'])
          dateStart=dateLast+dateStep
          if self.params['dateStep']>0 and dateStart>dateEnd:
