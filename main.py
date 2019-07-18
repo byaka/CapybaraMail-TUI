@@ -18,20 +18,13 @@ class DialogLoader(object):
       self.__params.pop('self')
       self.__params.pop('apiCaller')
       self.__params.pop('direction')
-      self._dateStep=self.__params['dateStep']=direction
+      self._dateStep=direction
       self._loaded=False
       self.__cache={}
       self._firstDate=None
       self._lastDate=None
       self._apiCaller=apiCaller
-      self._canAutoStop=self._check_canAutoStop(self.__params['dateEnd'])
       self._ended=False
-
-   @staticmethod
-   def _check_canAutoStop(dateEnd):
-      s=dateEnd
-      if s is True or s is False or s is None: return False
-      return True
 
    @staticmethod
    def _conv_date(date):
@@ -44,7 +37,7 @@ class DialogLoader(object):
       raise ValueError
 
    def _load(self):
-      p=dict(self.__params, asDialogs=True, returnFull=True, onlyCount=False)
+      p=dict(self.__params, dateStep=self._dateStep, returnNextDates=True, asDialogs=True, returnFull=True, onlyCount=False)
       return self._apiCaller.filterMessages(**p)
 
    def isLoaded(self):
@@ -56,6 +49,8 @@ class DialogLoader(object):
    def dateWasLoaded(self, date):
       if not self._loaded:
          raise RuntimeError('Data not loaded yet')
+      if date is None:
+         return True
       date=self._conv_date(date)
       if self._dateStep>0:
          if date>=self._firstDate and date<=self._lastDate: return True
@@ -66,25 +61,18 @@ class DialogLoader(object):
    def load(self):
       if self._ended:
          return False, False
-      data, targets=self._load()
+      data, targets, nextDates=self._load()
       if not targets:
          self._ended=True
          return False, False
       self.__cache.update(data)
-      dateLast=self._lastDate=self._conv_date(data[-1][0])
       if self._firstDate is None:
          self._firstDate=self._conv_date(data[0][0])
       self._loaded=True
-      if self._canAutoStop:
-         dateEnd=self._conv_date(self.__params['dateEnd'])
-         dateStep=timedelta(days=self._dateStep)
-         dateStart=dateLast+dateStep
-         if self._dateStep>0 and dateStart>dateEnd:
-            self._ended=True
-         elif self._dateStep<0 and dateStart<dateEnd:
-            self._ended=True
-         else:
-            self.__params['dateStart']=dateStart.strftime('%Y%m%d')
+      if not nextDates:
+         self._ended=True
+      else:
+         self.__params['dateStart']=nextDates[0]
       return data, targets
 
    def __iter__(self):
@@ -94,26 +82,49 @@ class DialogLoader(object):
             raise StopIteration
          yield data, targets
 
+   def _get_nearest(self, dateStr, dateObj, direction):
+      # you must call this method only if you sure that requested date pass `self.dateWasLoaded`
+      if not self._loaded:
+         raise RuntimeError('Data not loaded yet')
+      if dateStr in self.__cache:
+         return dateStr, self.__cache[dateStr]
+      # this date have no data, so we swith it to next\prev with results
+      d=timedelta(days=direction)
+      while True:
+         dateObj+=d
+         dateStr=dateObj.strftime('%Y%m%d')
+         if dateStr in self.__cache:
+            return dateStr, self.__cache[dateStr]
+
    def get(self, date, direction):
       assert direction==1 or direction==-1
-      if date in self.__cache:
+      if not self._loaded:
+         raise RuntimeError('Data not loaded yet')
+      if date is None:
+         # requested first availible date
+         date=self._firstDate.strftime('%Y%m%d')
          return date, self.__cache[date]
-      date=self._conv_date(date)
-      if self.dateWasLoaded(date):
-         d=timedelta(days=direction)
-         while True:
-            date+=d
-            dateS=date.strftime('%Y%m%d')
-            if dateS in self.__cache:
-               return dateS, self.__cache[dateS]
+      elif date in self.__cache:
+         return date, self.__cache[date]
+      dateObj=self._conv_date(date)
+      if self.dateWasLoaded(dateObj):
+         # requested date in loaded range
+         return self._get_nearest(date, dateObj, direction)
+      elif direction!=self._dateStep:
+         # requested opposite direction so no point to load next data
+         return False, False
       else:
-         if direction==self._dateStep:
+         # data for this date not loaded yet
+         while True:
             data, targets=self.load()
-            return (False, False) if targets is False else data[0]
-         else:
-            #~ если дата крайняя и направление не совпадает с исходным
-            pass
-
+            if targets is False:
+               # search ended
+               return False, False
+            elif date in self.__cache:
+               return date, self.__cache[date]
+            elif self.dateWasLoaded(dateObj):
+               # requested date in loaded range
+               return self._get_nearest(date, dateObj, direction)
 
 class FiltersList(urwid.SimpleFocusListWalker):
    def __init__(self):

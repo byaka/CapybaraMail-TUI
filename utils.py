@@ -6,3 +6,4 @@ datetime_now=datetime.now
 datetime_today=datetime.today
 
 LINE_H='―'
+LINE_V='|'

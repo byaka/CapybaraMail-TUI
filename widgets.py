@@ -140,22 +140,33 @@ class FilterItem(SelectableMultiStyleWidget,):
    counter=property(lambda self: self.__count, set_counter)
 
 class DialogWalker(urwid.ListWalker):
-   def __init__(self, loader):
+   def __init__(self, loader, andLoad=True):
       self._loader=loader
+      if andLoad:
+         self._loader.load()
       self._data={}
-      self.focus={'date':None, 'index':0}
+      self.focus=(None, 0, 0)
 
-   def __getitem__(self, pos):
-      pass
+   def _get(self, direction, date, index, length):
+      index+=direction
+      if date is None or index<0 or index>=length:
+         date, data=self._loader.get(date, direction)
+         if data is False:
+            return None, None
+         elif date not in self._data:
+            self._data[date]=tuple(DialogHeader(None, o) for o in data)
+         index, length=0, len(data)
+      w=self._data[date][index]
+      return w, (date, index, length)
 
-   def next_position(self, pos):
-      pass
+   def get_next(self, pos):
+      return self._get(-1, *pos)
 
-   def prev_position(self, pos):
-      pass
+   def get_prev(self, pos):
+      return self._get(+1, *pos)
 
    def set_focus(self, pos):
-      pass
+      self.focus=pos
       self._modified()
 
 class DialogHeader(MultiStyleWidget,):
