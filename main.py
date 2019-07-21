@@ -4,41 +4,46 @@ import sys, os, datetime
 import urwid
 import urwid.raw_display
 from urwid import Columns, Pile, AttrWrap, ListBox, Text, RadioButton, Divider, Padding, Button
-from widgets import DialogHeader, FilterItem
+from widgets import DialogHeader, FilterItem, DialogWalker
 
 urwid.set_encoding("UTF-8")
 
-from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today
+from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
 
 class DialogLoader(object):
-   def __init__(self, apiCaller, login, query, dateStart='today', dateEnd=True, direction=1, limitDates=5, limitResults=5):
-      assert dateStep
+   def __init__(self, apiExecutor, login, query, dateStart='today', dateEnd=True, direction=-1, limitDates=5, limitResults=5):
       assert direction==1 or direction==-1
-      self.__params=locals()
-      self.__params.pop('self')
-      self.__params.pop('apiCaller')
-      self.__params.pop('direction')
+      self._dateStart=dateStart
+      self._dateEnd=dateEnd
       self._dateStep=direction
+      self.__params={
+         'login':login,
+         'query':query,
+         'limitDates':limitDates,
+         'limitResults':limitResults,
+      }
       self._loaded=False
       self.__cache={}
       self._firstDate=None
       self._lastDate=None
-      self._apiCaller=apiCaller
+      self._apiExecutor=apiExecutor
       self._ended=False
 
-   @staticmethod
-   def _conv_date(date):
-      if isinstance(date, (datetime.datetime, datetime.date)):
-         return date
-      elif isinstance(date, str):
-         return datetime.strptime(date, '%Y%m%d')
-      elif isinstance(date, int):
-         return datetime.date.fromtimestamp(date)
-      raise ValueError
+   direction=property(lambda self: self._dateStep)
 
    def _load(self):
-      p=dict(self.__params, dateStep=self._dateStep, returnNextDates=True, asDialogs=True, returnFull=True, onlyCount=False)
-      return self._apiCaller.filterMessages(**p)
+      p=dict(
+         self.__params,
+         dates=(self._dateStart,self._dateStep, self._dateEnd),
+         asDialogs=True,
+         returnFull=True,
+         onlyCount=False,
+         returnNextDates=True,
+      )
+      r=self._apiExecutor.filterMessages(**p)
+      assert r.get('code', False) is True
+      assert r.get('data', None)
+      return r['data']
 
    def isLoaded(self):
       return self._loaded
@@ -51,7 +56,7 @@ class DialogLoader(object):
          raise RuntimeError('Data not loaded yet')
       if date is None:
          return True
-      date=self._conv_date(date)
+      date=to_date(date)
       if self._dateStep>0:
          if date>=self._firstDate and date<=self._lastDate: return True
       else:
@@ -67,12 +72,13 @@ class DialogLoader(object):
          return False, False
       self.__cache.update(data)
       if self._firstDate is None:
-         self._firstDate=self._conv_date(data[0][0])
+         self._firstDate=to_date(data[0][0])
+      self._lastDate=to_date(data[-1][0])
       self._loaded=True
       if not nextDates:
          self._ended=True
       else:
-         self.__params['dateStart']=nextDates[0]
+         self._dateStart=nextDates[0]
       return data, targets
 
    def __iter__(self):
@@ -92,7 +98,7 @@ class DialogLoader(object):
       d=timedelta(days=direction)
       while True:
          dateObj+=d
-         dateStr=dateObj.strftime('%Y%m%d')
+         dateStr=dateObj.strftime('%Y-%m-%d')
          if dateStr in self.__cache:
             return dateStr, self.__cache[dateStr]
 
@@ -102,11 +108,11 @@ class DialogLoader(object):
          raise RuntimeError('Data not loaded yet')
       if date is None:
          # requested first availible date
-         date=self._firstDate.strftime('%Y%m%d')
+         date=self._firstDate.strftime('%Y-%m-%d')
          return date, self.__cache[date]
       elif date in self.__cache:
          return date, self.__cache[date]
-      dateObj=self._conv_date(date)
+      dateObj=to_date(date)
       if self.dateWasLoaded(dateObj):
          # requested date in loaded range
          return self._get_nearest(date, dateObj, direction)
@@ -143,20 +149,20 @@ class FiltersList(urwid.SimpleFocusListWalker):
       ]
       super().__init__(data)
 
-class DialogList(urwid.SimpleFocusListWalker):
-   def __init__(self):
-      data=[
-         DialogHeader('d1', [
-            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-            {'id':'m1', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-         ]),
-         DialogHeader('d2', [
-            {'id':'m2', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 2', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 2', 'bodyHtml':'', 'attachments':[], 'labels':('#unread',)},
-         ]),
+# class DialogList(urwid.SimpleFocusListWalker):
+#    def __init__(self):
+#       data=[
+#          DialogHeader('d1', [
+#             {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+#             {'id':'m1', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+#             {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+#          ]),
+#          DialogHeader('d2', [
+#             {'id':'m2', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 2', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 2', 'bodyHtml':'', 'attachments':[], 'labels':('#unread',)},
+#          ]),
 
-      ]
-      super().__init__(data)
+#       ]
+#       super().__init__(data)
 
 class ScreenMain(object):
    palette = [
@@ -184,18 +190,30 @@ class ScreenMain(object):
       ('unread', '', '', '', '#880', '#a06'),
    ]
 
-   def __init__(self):
+   def __init__(self, apiExecutor):
+      self.apiExecutor=apiExecutor
+
       self.screen=urwid.raw_display.Screen()
       self.screen.set_terminal_properties(colors=256)
       self.screen.reset_default_terminal_palette()
       self.screen.register_palette(self.palette)
+
+      self._dialogWalker=DialogWalker(DialogLoader(
+         self.apiExecutor,
+         'John Smith', {'or':[
+            {'key':'from', 'value':'mail@ajon.ru', 'match':'=='},
+            # {'key':'label', 'value':u'черновики', 'match':'=='},
+         ]},
+         dateStart='today', dateEnd=True, direction=-1,
+         limitDates=5, limitResults=5,
+      ))
 
       self.layout=AttrWrap(Columns([
          ('weight', 2, AttrWrap(Pile([
             ListBox(FiltersList()),
          ]), 'style1', 'style1')),  # sidebar
          ('weight', 8, Pile([
-            ListBox(DialogList()),
+            ListBox(self._dialogWalker),
          ])),  # wrapper
       ], 0), 'body')
 
@@ -212,4 +230,6 @@ class ScreenMain(object):
 
 
 if __name__ == '__main__':
-   ScreenMain().run()
+   from jsonrpc_requests import Server
+   apiExecutor=Server('http://localhost:7001/api')
+   ScreenMain(apiExecutor).run()

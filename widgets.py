@@ -8,7 +8,7 @@ from urwid import WidgetWrap, Pile, Columns, Text, Padding, AttrWrap, Selectable
 from urwid.command_map import ACTIVATE
 from urwid.util import is_mouse_press
 
-from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today
+from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
 
 class TextFocusable(Text):
    """
@@ -145,28 +145,34 @@ class DialogWalker(urwid.ListWalker):
       if andLoad:
          self._loader.load()
       self._data={}
-      self.focus=(None, 0, 0)
+      self._focus=(None, 0, 0)
 
    def _get(self, direction, date, index, length):
       index+=direction
-      if date is None or index<0 or index>=length:
-         date, data=self._loader.get(date, direction)
+      if date and (index<0 or index>=length):
+         date=(to_date(date)+timedelta(days=direction*self._loader.direction)).strftime('%Y-%m-%d')
+         index=0
+      if date not in self._data:
+         date, data=self._loader.get(date, direction*self._loader.direction)
          if data is False:
             return None, None
-         elif date not in self._data:
-            self._data[date]=tuple(DialogHeader(None, o) for o in data)
-         index, length=0, len(data)
+         self._data[date]=tuple(DialogHeader(None, o) for o in data)
+         index=0
+      length=len(self._data[date])
       w=self._data[date][index]
       return w, (date, index, length)
 
    def get_next(self, pos):
-      return self._get(-1, *pos)
-
-   def get_prev(self, pos):
       return self._get(+1, *pos)
 
+   def get_prev(self, pos):
+      return self._get(-1, *pos)
+
+   def get_focus(self):
+      return self._get(self._loader.direction, *self._focus)
+
    def set_focus(self, pos):
-      self.focus=pos
+      self._focus=pos
       self._modified()
 
 class DialogHeader(MultiStyleWidget,):
@@ -222,8 +228,8 @@ class DialogHeader(MultiStyleWidget,):
       val=[('unread', '   ')] if unread else '   '
       self._w_indicator.set_text(val)
       # timestamp
-      val=self.data[-1]['timestamp']
-      if val.date()==datetime_today().date():
+      val=to_date(self.data[-1]['timestamp'])
+      if val==datetime_today().date():
          val=val.strftime('%H:%M:%S')
       else:
          val=val.strftime('%d %b, %a')
@@ -259,6 +265,7 @@ class DialogHeader(MultiStyleWidget,):
       self._w_subject.set_text(val)
       # last message
       val=self.data[-1]['bodyPlain'] or self.data[-1]['bodyHtml']
+      val=val.replace('\r', '').replace('\n', ' ')[:80]
       self._w_lastmsg.set_text(val)
 
    def _threads2flat(self, data):
@@ -344,7 +351,8 @@ class Message(MultiStyleWidget,):
       s='incoming' if self.data['isIncoming'] else 'outgoing'
       self._w_indicator_inc._original_map[0]=s
       # timestamp
-      val=self.data['timestamp'].strftime(f'%A, %d %B {"%Y" if self.data["timestamp"].year!=datetime_today().year else ""}%H:%M:%S')
+      val=to_datetime(self.data['timestamp'])
+      val=val.strftime(f'%A, %d %B {"%Y " if val.year!=datetime_today().year else ""}%H:%M:%S')
       self._w_timestamp.set_text(val)
       # members
       if incoming:
@@ -371,4 +379,6 @@ class Message(MultiStyleWidget,):
       self._w_subject.set_text(val)
       # last message
       val=self.data['bodyPlain'] or self.data['bodyHtml']
+      val='\n'.join(s for s in val.split('\n') if not s.startswith('>'))
+      val=val.replace('\r', '')
       self._w_msg.set_text(val)
