@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 /CapybaraMail-TUI.sublime-project
 /CapybaraMail-TUI.sublime-workspace
+/log.txt

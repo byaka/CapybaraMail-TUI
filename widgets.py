@@ -5,7 +5,7 @@ import weakref
 
 import urwid
 from urwid import WidgetWrap, Pile, Columns, Text, Padding, AttrWrap, SelectableIcon, Divider, WidgetPlaceholder, WidgetDisable, SolidFill, Filler, BoxAdapter, Frame
-from urwid.command_map import ACTIVATE
+from urwid.command_map import ACTIVATE, CURSOR_LEFT, CURSOR_RIGHT
 from urwid.util import is_mouse_press
 
 from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
@@ -46,7 +46,12 @@ def inherit_focus(children, focus):
       if hasattr(w, '_w'):  # WidgetWrap
          tArr.append(w._w)
       if hasattr(w, 'contents'):  # for Pile, Columns etc
-         tArr.extend(w.contents)
+         if callable(w.contents):
+            try:
+               tArr.extend(w.contents())
+            except KeyError: pass
+         else:
+            tArr.extend(w.contents)
 
 class MultiStyleWidget(FocusableWidget):
    def render(self, size, focus=False):
@@ -93,7 +98,7 @@ class SelectableMultiStyleWidget(FocusableWidget):
       return self._selected
 
    def keypress(self, size, key):
-      if self._command_map[key] != ACTIVATE:
+      if self._command_map[key]!=ACTIVATE:
          return self.__super.keypress(size, key)
       self.select()
 
@@ -139,41 +144,79 @@ class FilterItem(SelectableMultiStyleWidget,):
 
    counter=property(lambda self: self.__count, set_counter)
 
+class DialogList(urwid.ListBox):
+   def __init__(self, loader, andLoad=True):
+      self.__super.__init__(DialogWalker(loader, andLoad))
+
+   def keypress(self, size, key):
+      if self._command_map[key]==ACTIVATE:
+         w, pos=self.focus, self.focus_position
+         if isinstance(w.original_widget, DialogHeader):
+            w.original_widget=w.original_widget.collapsed
+         elif isinstance(w.original_widget, DialogHeaderCollapsed):
+            w.original_widget=w.original_widget.original
+         else: return
+         self.body._modified()
+      else:
+         return self.__super.keypress(size, key)
+
 class DialogWalker(urwid.ListWalker):
    def __init__(self, loader, andLoad=True):
       self._loader=loader
       if andLoad:
          self._loader.load()
       self._data={}
-      self._focus=(None, 0, 0)
+      self.focus=(None, 0, 0)
 
    def _get(self, direction, date, index, length):
+      _date, _index, _length=date, index, length
+      __date, __index, __length=self.focus
+      dateStep=direction*self._loader.direction if direction else self._loader.direction
       index+=direction
       if date and (index<0 or index>=length):
-         date=(to_date(date)+timedelta(days=direction*self._loader.direction)).strftime('%Y-%m-%d')
-         index=0
+         date=(to_date(date)+timedelta(days=dateStep)).strftime('%Y-%m-%d')
+         if date in self._data:
+            length=len(self._data[date])
+            index=0 if dateStep<0 else length-1
       if date not in self._data:
-         date, data=self._loader.get(date, direction*self._loader.direction)
+         date, data=self._loader.get(date, dateStep)
          if data is False:
             return None, None
-         self._data[date]=tuple(DialogHeader(None, o) for o in data)
-         index=0
-      length=len(self._data[date])
+         elif date not in self._data:
+            print(f'DIALOG_CACHE_UPDATE {date}')
+            self._data[date]=tuple(WidgetPlaceholder(DialogHeader(None, o)) for o in data)
+         length=len(self._data[date])
+         index=0 if dateStep<0 else length-1
       w=self._data[date][index]
       return w, (date, index, length)
 
    def get_next(self, pos):
-      return self._get(+1, *pos)
+      w, i=self._get(+1, *pos)
+      print(f'GET_NEXT {pos} --> {i}')
+      return w, i
 
    def get_prev(self, pos):
-      return self._get(-1, *pos)
+      w, i=self._get(-1, *pos)
+      print(f'GET_PREV {pos} --> {i}')
+      return w, i
 
    def get_focus(self):
-      return self._get(self._loader.direction, *self._focus)
+      w, i=self._get(0, *self.focus)
+      print(f'GET_FOCUS {i}')
+      return w, i
 
    def set_focus(self, pos):
-      self._focus=pos
+      old=self.focus
+      self.focus=pos
+      print(f'SET_FOCUS {old} --> {pos}')
       self._modified()
+
+class DialogHeaderCollapsed(MultiStyleWidget,):
+   def __init__(self, original):
+      self.original=original
+      w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
+      self.__super.__init__(w)
+
 
 class DialogHeader(MultiStyleWidget,):
    def __init__(self, val, data):
@@ -196,7 +239,16 @@ class DialogHeader(MultiStyleWidget,):
       ], 0)
       w=AttrWrapEx(w, 'style3', 'style3-focus')
 
-      w=Pile([w]+[Message(i, o) for i, o in enumerate(self.data)])
+      # w=Pile([w]+[Message(i, o) for i, o in enumerate(self.data)])
+
+      # w=Pile([
+      #    w,
+      #    urwid.BoxAdapter(
+      #       urwid.ListBox(urwid.SimpleFocusListWalker([Message(i, o) for i, o in enumerate(self.data)])),
+      #       2
+      #    )
+      # ])
+      self.collapsed=DialogHeaderCollapsed(self)
 
       self.__super.__init__(w)
 
@@ -283,7 +335,6 @@ class DialogHeader(MultiStyleWidget,):
       return res
 
    def keypress(self, size, key):
-
       return self.__super.keypress(size, key)
 
 # class DialogStory(MultiStyleWidget,):

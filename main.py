@@ -4,11 +4,11 @@ import sys, os, datetime
 import urwid
 import urwid.raw_display
 from urwid import Columns, Pile, AttrWrap, ListBox, Text, RadioButton, Divider, Padding, Button
-from widgets import DialogHeader, FilterItem, DialogWalker
+from widgets import DialogHeader, FilterItem, DialogList
 
 urwid.set_encoding("UTF-8")
 
-from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
+from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
 
 class DialogLoader(object):
    def __init__(self, apiExecutor, login, query, dateStart='today', dateEnd=True, direction=-1, limitDates=5, limitResults=5):
@@ -198,7 +198,7 @@ class ScreenMain(object):
       self.screen.reset_default_terminal_palette()
       self.screen.register_palette(self.palette)
 
-      self._dialogWalker=DialogWalker(DialogLoader(
+      self._dialogList=DialogList(DialogLoader(
          self.apiExecutor,
          'John Smith', {'or':[
             {'key':'from', 'value':'mail@ajon.ru', 'match':'=='},
@@ -208,13 +208,18 @@ class ScreenMain(object):
          limitDates=5, limitResults=5,
       ))
 
+      # self.layout=AttrWrap(Columns([
+      #    ('weight', 2, AttrWrap(Pile([
+      #       ListBox(FiltersList()),
+      #    ]), 'style1', 'style1')),  # sidebar
+      #    ('weight', 8, Pile([
+      #       ListBox(self._dialogWalker),
+      #    ])),  # wrapper
+      # ], 0), 'body')
+
       self.layout=AttrWrap(Columns([
-         ('weight', 2, AttrWrap(Pile([
-            ListBox(FiltersList()),
-         ]), 'style1', 'style1')),  # sidebar
-         ('weight', 8, Pile([
-            ListBox(self._dialogWalker),
-         ])),  # wrapper
+         ('weight', 2, AttrWrap(ListBox(FiltersList()), 'style1', 'style1')),  # sidebar
+         ('weight', 8, self._dialogList),  # wrapper
       ], 0), 'body')
 
       self.layout.set_focus_column(0)
@@ -230,6 +235,10 @@ class ScreenMain(object):
 
 
 if __name__ == '__main__':
+   import builtins
+   p2f=Print2FIle()
+   builtins.print=p2f.print
+
    from jsonrpc_requests import Server
    apiExecutor=Server('http://localhost:7001/api')
    ScreenMain(apiExecutor).run()

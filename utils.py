@@ -6,6 +6,18 @@ from datetime import timedelta
 datetime_now=datetime.datetime.now
 datetime_today=datetime.datetime.today
 
+class Print2FIle(object):
+   def __init__(self, path=None):
+      self.path=path or os.path.join(os.path.dirname(sys.argv[0]), 'log.txt')
+      self._file=open(self.path, 'wt', 1)
+
+   def print(self, *args):
+      msg=' '.join(f'{o}' for o in args)
+      try:
+         self._file.write(f'[{datetime.datetime.now()}] {msg}\n')
+      except Exception as e:
+         self._file.write(f'[{datetime.datetime.now()}] ERROR_LOGGING {e}\n')
+
 def console_interact(scope=None, msg=None):
    if not sys.stdout.isatty():
       raise RuntimeError('Must be TTY')
