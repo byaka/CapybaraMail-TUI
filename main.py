@@ -149,20 +149,20 @@ class FiltersList(urwid.SimpleFocusListWalker):
       ]
       super().__init__(data)
 
-# class DialogList(urwid.SimpleFocusListWalker):
-#    def __init__(self):
-#       data=[
-#          DialogHeader('d1', [
-#             {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-#             {'id':'m1', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-#             {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-#          ]),
-#          DialogHeader('d2', [
-#             {'id':'m2', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 2', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 2', 'bodyHtml':'', 'attachments':[], 'labels':('#unread',)},
-#          ]),
+class DialogWalkerDummy(urwid.SimpleFocusListWalker):
+   def __init__(self):
+      data=[
+         DialogHeader('d1', [
+            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+            {'id':'m1', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
+         ]),
+         DialogHeader('d2', [
+            {'id':'m2', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 2', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 2', 'bodyHtml':'', 'attachments':[], 'labels':('#unread',)},
+         ]),
 
-#       ]
-#       super().__init__(data)
+      ]
+      super().__init__(data)
 
 class ScreenMain(object):
    palette = [
@@ -207,15 +207,7 @@ class ScreenMain(object):
          dateStart='today', dateEnd=True, direction=-1,
          limitDates=5, limitResults=5,
       ))
-
-      # self.layout=AttrWrap(Columns([
-      #    ('weight', 2, AttrWrap(Pile([
-      #       ListBox(FiltersList()),
-      #    ]), 'style1', 'style1')),  # sidebar
-      #    ('weight', 8, Pile([
-      #       ListBox(self._dialogWalker),
-      #    ])),  # wrapper
-      # ], 0), 'body')
+      # self._dialogList=ListBox(DialogWalkerDummy())
 
       self.layout=AttrWrap(Columns([
          ('weight', 2, AttrWrap(ListBox(FiltersList()), 'style1', 'style1')),  # sidebar

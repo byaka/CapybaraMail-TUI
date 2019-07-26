@@ -166,7 +166,7 @@ class DialogWalker(urwid.ListWalker):
       if andLoad:
          self._loader.load()
       self._data={}
-      self.focus=(None, 0, 0)
+      self.focus=(None, 0, 0, (False, 0, 0))  #~ second tuple for messages
 
    def _get(self, direction, date, index, length):
       _date, _index, _length=date, index, length
@@ -216,7 +216,6 @@ class DialogHeaderCollapsed(MultiStyleWidget,):
       self.original=original
       w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
       self.__super.__init__(w)
-
 
 class DialogHeader(MultiStyleWidget,):
    def __init__(self, val, data):
@@ -337,28 +336,6 @@ class DialogHeader(MultiStyleWidget,):
    def keypress(self, size, key):
       return self.__super.keypress(size, key)
 
-# class DialogStory(MultiStyleWidget,):
-#    def __init__(self, val, data):
-#       self.value=val
-#       self.data=data
-#       self._w_indicator=AttrWrapEx(TextFocusable('', align='left', wrap='any'), 'style4', 'style4-focus')
-#       self._w_timestamp=AttrWrapEx(Text('', align='center', wrap='clip'), 'style4', 'style4-focus')
-#       self._w_statusbar=AttrWrapEx(Text('', align='center', wrap='clip'), 'style5', 'style5-focus')
-#       self._w_members=AttrWrapEx(Text('', align='left', wrap='space'), 'style3', 'style3-focus')
-#       self._w_subject=AttrWrapEx(Text('', align='left', wrap='clip'), 'style3', 'style3-focus')
-#       self._w_lastmsg=AttrWrapEx(Text('', align='left', wrap='clip'), 'style4', 'style4-focus')
-#       self.refresh()
-#       w=Columns([
-#          (1, self._w_indicator),
-#          Pile([Columns([
-#             (11, Padding(Pile([self._w_timestamp, self._w_statusbar]), right=1)),
-#             (20, Padding(self._w_members, right=2)),
-#             Pile([self._w_subject, self._w_lastmsg]),
-#          ], 0), Divider(LINE_H)])
-#       ], 0)
-#       w=AttrWrapEx(w, 'style3', 'style3-focus')
-#       self.__super.__init__(w)
-
 class Message(MultiStyleWidget,):
    def __init__(self, val, data):
       self.value=val
@@ -408,22 +385,22 @@ class Message(MultiStyleWidget,):
       # members
       if incoming:
          self._w_label_membersMain.set_text('From: ')
-         self._w_label_membersMore.set_text('And To: ')
          val=self.data['from']
          self._w_membersMain.set_text(val)
          val=set()
          for k in ['to', 'cc', 'bcc']:
             if self.data[k]: val.update(self.data[k])
          self._w_membersMore.set_text(', '.join(val))
+         self._w_label_membersMore.set_text('And To: ' if val else '')
       else:
          self._w_label_membersMain.set_text('To: ')
-         self._w_label_membersMore.set_text('And To: ')
          val=self.data['to']
          self._w_membersMain.set_text(', '.join(sorted(val)))
          val=set()
          for k in ['cc', 'bcc']:
             if self.data[k]: val.update(self.data[k])
          self._w_membersMore.set_text(', '.join(sorted(val)))
+         self._w_label_membersMore.set_text('And To: ' if val else '')
       # subject
       re_clearReply=re.compile(r'^((?:(?:re)|(?:Re)|(?:RE)):\s*)+')
       val=re_clearReply.sub('', self.data['subject'])
