@@ -3,6 +3,8 @@ import sys, os, re, code
 import datetime
 from datetime import timedelta
 
+NULL=object()
+
 datetime_now=datetime.datetime.now
 datetime_today=datetime.datetime.today
 

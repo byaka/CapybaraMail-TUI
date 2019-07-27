@@ -25,6 +25,16 @@ class AttrWrapEx(AttrWrap):
       self._original_map=list(attrs)
       self.__super.__init__(w, attrs[0], focus_attr=(attrs[1] if len(attrs)>1 else None))
 
+class WidgetPlaceholderEx(WidgetPlaceholder):
+   def __getattr__(self,name):
+      """
+      Call getattr on wrapped widget.  This has been the longstanding
+      behaviour of AttrWrap, but is discouraged.  New code should be
+      using AttrMap and .base_widget or .original_widget instead.
+      """
+      return getattr(self._original_widget, name)
+
+
 _FILTERS_GROUP={}
 
 class FocusableWidget(WidgetWrap):
@@ -151,12 +161,13 @@ class DialogList(urwid.ListBox):
    def keypress(self, size, key):
       if self._command_map[key]==ACTIVATE:
          w, pos=self.focus, self.focus_position
-         if isinstance(w.original_widget, DialogHeader):
-            w.original_widget=w.original_widget.collapsed
-         elif isinstance(w.original_widget, DialogHeaderCollapsed):
-            w.original_widget=w.original_widget.original
-         else: return
-         self.body._modified()
+         if isinstance(w, WidgetPlaceholder):
+            if isinstance(w.original_widget, DialogHeader):
+               w.original_widget=w.original_widget.collapsed
+            elif isinstance(w.original_widget, DialogStory):
+               w.original_widget=w.original_widget.original
+            else: return
+            self.body._modified()
       else:
          return self.__super.keypress(size, key)
 
@@ -166,29 +177,79 @@ class DialogWalker(urwid.ListWalker):
       if andLoad:
          self._loader.load()
       self._data={}
-      self.focus=(None, 0, 0, (False, 0, 0))  #~ second tuple for messages
+      self.focus=(None, 0, None)
 
-   def _get(self, direction, date, index, length):
-      _date, _index, _length=date, index, length
-      __date, __index, __length=self.focus
+   def isOpened(self, date, dialog):
+      if date not in self._data or dialog<0 or dialog>=len(self._data[date]):
+         return False
+      return isinstance(self._data[date][dialog].original_widget, DialogStory)
+
+   def _get_nearest_date(self, direction, date):
       dateStep=direction*self._loader.direction if direction else self._loader.direction
-      index+=direction
-      if date and (index<0 or index>=length):
+      if date is not None and direction:
          date=(to_date(date)+timedelta(days=dateStep)).strftime('%Y-%m-%d')
          if date in self._data:
-            length=len(self._data[date])
-            index=0 if dateStep<0 else length-1
+            dialog=0 if dateStep<0 else len(self._data[date])-1
+            msg=None if direction>0 or not self.isOpened(date, dialog) else self._data[date][dialog].messageCount-1
+            return date, dialog, msg
+
+      date, data=self._loader.get(date, dateStep)
+      if data is False:
+         return None, 0, None
+      elif date not in self._data:
+         print(f'DIALOG_CACHE_UPDATE {date}')
+         self._data[date]=tuple(WidgetPlaceholderEx(DialogHeader(None, o)) for o in data)
+      dialog=0 if dateStep<0 else len(self._data[date])-1
+      msg=None if direction>0 or not self.isOpened(date, dialog) else self._data[date][dialog].messageCount-1
+      return date, dialog, msg
+
+   def _get_nearest_dialog(self, direction, date, dialog):
       if date not in self._data:
-         date, data=self._loader.get(date, dateStep)
-         if data is False:
-            return None, None
-         elif date not in self._data:
-            print(f'DIALOG_CACHE_UPDATE {date}')
-            self._data[date]=tuple(WidgetPlaceholder(DialogHeader(None, o)) for o in data)
-         length=len(self._data[date])
-         index=0 if dateStep<0 else length-1
-      w=self._data[date][index]
-      return w, (date, index, length)
+         return self._get_nearest_date(direction, date)
+      dialog+=direction
+      if dialog>=0 and dialog<len(self._data[date]):
+         msg=None if direction>0 or not self.isOpened(date, dialog) else self._data[date][dialog].messageCount-1
+         return date, dialog, msg
+      return self._get_nearest_date(direction, date)
+
+   def _get_nearest_msg(self, direction, date, dialog, msg):
+      if date not in self._data:
+         return self._get_nearest_date(direction, date)
+      if dialog<0 or dialog>=len(self._data[date]):
+         return self._get_nearest_dialog(direction, date, dialog)
+      if self.isOpened(date, dialog):
+         if msg is None:
+            if direction<=0:
+               return self._get_nearest_dialog(direction or -1, date, dialog)
+            msg=0
+         else:
+            msg+=direction
+         if msg==-1:
+            return date, dialog, None
+         elif msg>=0 and msg<self._data[date][dialog].messageCount:
+            return date, dialog, msg
+      return self._get_nearest_dialog(direction, date, dialog)
+
+   def _get(self, direction, date, dialog, msg):
+      if(
+         not direction and
+         date in self._data and
+         dialog>=0 and
+         dialog<len(self._data[date]) and
+         (msg is None or (msg>=0 and msg<self._data[date][dialog].messageCount))
+      ):
+         w=self._data[date][dialog]
+         if msg is not None:
+            w=w.messageList[msg]
+         return w, (date, dialog, msg)
+      #
+      date, dialog, msg=self._get_nearest_msg(direction, date, dialog, msg)
+      if date is None:
+         return None, (date, dialog, msg)
+      w=self._data[date][dialog]
+      if msg is not None:
+         w=w.messageList[msg]
+      return w, (date, dialog, msg)
 
    def get_next(self, pos):
       w, i=self._get(+1, *pos)
@@ -211,22 +272,40 @@ class DialogWalker(urwid.ListWalker):
       print(f'SET_FOCUS {old} --> {pos}')
       self._modified()
 
-class DialogHeaderCollapsed(MultiStyleWidget,):
+class DialogStory(MultiStyleWidget,):
    def __init__(self, original):
       self.original=original
       w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
       self.__super.__init__(w)
 
+   @property
+   def messageList(self):
+      return self.original.messageList
+
+   @property
+   def messageCount(self):
+      return self.original.messageCount
+
+
 class DialogHeader(MultiStyleWidget,):
    def __init__(self, val, data):
       self.value=val
       self.data=data
+      self._w_init()
+      self.collapsed=DialogStory(self)
+      self.__msgs=None
+      self.__super.__init__(self._w)
+
+   def _w_prep(self):
       self._w_indicator=AttrWrapEx(TextFocusable('', align='left', wrap='any'), 'style4', 'style4-focus')
       self._w_timestamp=AttrWrapEx(Text('', align='center', wrap='clip'), 'style4', 'style4-focus')
       self._w_statusbar=AttrWrapEx(Text('', align='center', wrap='clip'), 'style5', 'style5-focus')
       self._w_members=AttrWrapEx(Text('', align='left', wrap='space'), 'style3', 'style3-focus')
       self._w_subject=AttrWrapEx(Text('', align='left', wrap='clip'), 'style3', 'style3-focus')
       self._w_lastmsg=AttrWrapEx(Text('', align='left', wrap='clip'), 'style4', 'style4-focus')
+
+   def _w_init(self):
+      self._w_prep()
       self.refresh()
       w=Columns([
          (1, self._w_indicator),
@@ -236,20 +315,17 @@ class DialogHeader(MultiStyleWidget,):
             Pile([self._w_subject, self._w_lastmsg]),
          ], 0), Divider(LINE_H)]), left=1),
       ], 0)
-      w=AttrWrapEx(w, 'style3', 'style3-focus')
+      self._w=AttrWrapEx(w, 'style3', 'style3-focus')
 
-      # w=Pile([w]+[Message(i, o) for i, o in enumerate(self.data)])
+   @property
+   def messageList(self):
+      if self.__msgs is None:
+         self.__msgs=tuple(Message(i, o) for i, o in enumerate(self.data))
+      return self.__msgs
 
-      # w=Pile([
-      #    w,
-      #    urwid.BoxAdapter(
-      #       urwid.ListBox(urwid.SimpleFocusListWalker([Message(i, o) for i, o in enumerate(self.data)])),
-      #       2
-      #    )
-      # ])
-      self.collapsed=DialogHeaderCollapsed(self)
-
-      self.__super.__init__(w)
+   @property
+   def messageCount(self):
+      return len(self.data)
 
    def refresh(self):
       me=frozenset(['byaka.life@gmail.com', 'genryrar@gmail.com', 'byaka@buber.ru', 'byaka@clevit.ru'])
