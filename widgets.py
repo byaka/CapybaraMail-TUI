@@ -19,6 +19,7 @@ class TextFocusable(Text):
 
    def mouse_event(self, size, event, button, x, y, focus): return True
 
+#! былоб здорово расширить эту обретку, добавив поддержку различных именованных стилей вместо индексных, ну и заодно удобный метод для модификации и получения по имени. но придется переписать существующий код фокусировки
 class AttrWrapEx(AttrWrap):
    def __init__(self, w, *attrs):
       assert attrs
@@ -33,7 +34,6 @@ class WidgetPlaceholderEx(WidgetPlaceholder):
       using AttrMap and .base_widget or .original_widget instead.
       """
       return getattr(self._original_widget, name)
-
 
 _FILTERS_GROUP={}
 
@@ -78,7 +78,6 @@ class SelectableMultiStyleWidget(FocusableWidget):
       self._group={} if group is None else group
       self._group[hash(self)]=weakref.ref(self)
       self.__super.__init__(w, *args, **kwargs)
-
       self.__just_restyled=False
 
    def unselect(self):
@@ -177,7 +176,7 @@ class DialogWalker(urwid.ListWalker):
       if andLoad:
          self._loader.load()
       self._data={}
-      self.focus=(None, 0, None)
+      self.focus=(None, None, 0, None)  # (list-index, date, dialog, msg)
 
    def isOpened(self, date, dialog):
       if date not in self._data or dialog<0 or dialog>=len(self._data[date]):
@@ -192,7 +191,6 @@ class DialogWalker(urwid.ListWalker):
             dialog=0 if dateStep<0 else len(self._data[date])-1
             msg=None if direction>0 or not self.isOpened(date, dialog) else self._data[date][dialog].messageCount-1
             return date, dialog, msg
-
       date, data=self._loader.get(date, dateStep)
       if data is False:
          return None, 0, None
@@ -230,7 +228,7 @@ class DialogWalker(urwid.ListWalker):
             return date, dialog, msg
       return self._get_nearest_dialog(direction, date, dialog)
 
-   def _get(self, direction, date, dialog, msg):
+   def _get(self, direction, list_index, date, dialog, msg):
       if(
          not direction and
          date in self._data and
@@ -241,15 +239,20 @@ class DialogWalker(urwid.ListWalker):
          w=self._data[date][dialog]
          if msg is not None:
             w=w.messageList[msg]
-         return w, (date, dialog, msg)
+         else:
+            w.makeStriped(list_index%2)
+         return w, (list_index, date, dialog, msg)
       #
       date, dialog, msg=self._get_nearest_msg(direction, date, dialog, msg)
       if date is None:
-         return None, (date, dialog, msg)
+         return None, (list_index, date, dialog, msg)
       w=self._data[date][dialog]
       if msg is not None:
          w=w.messageList[msg]
-      return w, (date, dialog, msg)
+      else:
+         list_index=(list_index+direction) if list_index is not None else 0
+         w.makeStriped(list_index%2)
+      return w, (list_index, date, dialog, msg)
 
    def get_next(self, pos):
       w, i=self._get(+1, *pos)
@@ -275,8 +278,9 @@ class DialogWalker(urwid.ListWalker):
 class DialogStory(MultiStyleWidget,):
    def __init__(self, original):
       self.original=original
-      w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
-      self.__super.__init__(w)
+      self._w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
+      self._w_child=()
+      self.__super.__init__(self._w)
 
    @property
    def messageList(self):
@@ -286,15 +290,34 @@ class DialogStory(MultiStyleWidget,):
    def messageCount(self):
       return self.original.messageCount
 
+   def makeStriped(self, striped):
+      self.original.makeStriped(striped)
 
 class DialogHeader(MultiStyleWidget,):
-   def __init__(self, val, data):
+   def __init__(self, val, data, striped=False):
       self.value=val
       self.data=data
       self._w_init()
       self.collapsed=DialogStory(self)
       self.__msgs=None
+      self._w=AttrWrapEx(self._w, 'style3', 'style3-focus')
+      self.makeStriped(striped)
       self.__super.__init__(self._w)
+
+   def makeStriped(self, striped):
+      for o in (
+         self._w, *self._w_child,
+         self.collapsed._w, *self.collapsed._w_child,
+      ):
+         if not isinstance(o, AttrWrapEx): continue
+         old_attr=o._original_map[0]
+         s=old_attr.endswith('-striped')
+         if s==striped: continue
+         new_attr=(old_attr+'-striped') if striped else old_attr[:-len('-strip')]
+         o._original_map[0]=new_attr
+         if o.attr!=new_attr:
+            o.attr=new_attr
+            o._invalidate()
 
    def _w_prep(self):
       self._w_indicator=AttrWrapEx(TextFocusable('', align='left', wrap='any'), 'style4', 'style4-focus')
@@ -303,19 +326,26 @@ class DialogHeader(MultiStyleWidget,):
       self._w_members=AttrWrapEx(Text('', align='left', wrap='space'), 'style3', 'style3-focus')
       self._w_subject=AttrWrapEx(Text('', align='left', wrap='clip'), 'style3', 'style3-focus')
       self._w_lastmsg=AttrWrapEx(Text('', align='left', wrap='clip'), 'style4', 'style4-focus')
+      self._w_child=(
+         self._w_indicator,
+         self._w_timestamp,
+         self._w_statusbar,
+         self._w_members,
+         self._w_subject,
+         self._w_lastmsg,
+      )
 
    def _w_init(self):
       self._w_prep()
       self.refresh()
-      w=Columns([
+      self._w=Columns([
          (1, self._w_indicator),
-         Padding(Pile([Columns([
+         Padding(Columns([
             (11, Padding(Pile([self._w_timestamp, self._w_statusbar]), right=1)),
             (20, Padding(self._w_members, right=2)),
             Pile([self._w_subject, self._w_lastmsg]),
-         ], 0), Divider(LINE_H)]), left=1),
+         ], 0), left=1),
       ], 0)
-      self._w=AttrWrapEx(w, 'style3', 'style3-focus')
 
    @property
    def messageList(self):
@@ -352,7 +382,7 @@ class DialogHeader(MultiStyleWidget,):
          self._w_lastmsg._original_map[0]='style4'
          self._w_lastmsg._original_map[1]='style4-focus'
       # indicator
-      val=[('unread', '   ')] if unread else '   '
+      val=[('unread', '  ')] if unread else '  '
       self._w_indicator.set_text(val)
       # timestamp
       val=to_date(self.data[-1]['timestamp'])
