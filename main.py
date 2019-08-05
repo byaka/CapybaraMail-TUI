@@ -1,110 +1,82 @@
 #!/usr/bin/python3
-import sys, os, datetime
+import sys, os, datetime, time
 
 import urwid
 import urwid.raw_display
-from urwid import Columns, Pile, AttrWrap, ListBox, Text, Divider, Padding
-from widgets import DialogHeader, FilterItem, DialogList
 
-urwid.set_encoding("UTF-8")
+from utils import ScreenFixed, MagicDict, NULL, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
 
-from utils import NULL, LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
+import jsonrpc_requests
 
-from dialogLoader import DialogLoader
+from views import ViewMain
 
-class FiltersList(urwid.SimpleFocusListWalker):
-   def __init__(self):
-      data=[
-         FilterItem('#inbox', {'name':'Inbox', 'descr':'Untagged dialogs'}),
-         FilterItem('#backlog', {'name':'Backlog', 'descr':'Todo tasks'}),
-         FilterItem('#notes', {'name':'Notes', 'descr':'Useful info'}),
-         FilterItem('#custom1', {'name':'Custom 1', 'descr':'Created by user'}),
-         Text('Filters:', align='center', wrap='space'),
-         FilterItem('#done', {'name':'Done', 'descr':'Completed  tasks'}, showCounter=False),
-         FilterItem('#spam', {'name':'Spam', 'descr':'Marked as spam'}),
-         FilterItem('#all', {'name':'All', 'descr':''}, showCounter=False, showDescr=False),
-         FilterItem('#my1', {'name':'My 1', 'descr':''}, showCounter=False, showDescr=False),
-         FilterItem('#my2', {'name':'My 2', 'descr':''}, showCounter=False, showDescr=False),
-         Divider(LINE_H),
-      ]
-      super().__init__(data)
+THEME = [
+   ('style0', '', '', '', 'g3', '#eef'),
+   ('style1', '', '', '', 'g85', '#866'),
+   ('style1-focus', '', '', '', 'g85', '#888'),
+   ('style1-select', '', '', '', 'g85,bold', '#68d'),
+   ('style2', '', '', '', 'g70', '#866'),
+   ('style2-focus', '', '', '', 'g70', '#888'),
+   ('style2-select', '', '', '', 'g70,bold', '#68d'),
+   ('style3', '', '', '', 'g3', 'g85'),
+   ('style3-striped', '', '', '', 'g3', 'g93'),
+   ('style3-focus', '', '', '', 'g85', '#68d'),
+   ('style3bold', '', '', '', 'bold,g3', 'g85'),
+   ('style3bold-focus', '', '', '', 'bold,g85', '#68d'),
+   ('style4', '', '', '', 'g40', 'g85'),
+   ('style4-striped', '', '', '', 'g40', 'g93'),
+   ('style4-focus', '', '', '', 'g40', '#68d'),
+   ('style4bold', '', '', '', 'bold,g40', 'g85'),
+   ('style4bold-striped', '', '', '', 'bold,g40', 'g93'),
+   ('style4bold-focus', '', '', '', 'bold,g40', '#68d'),
+   ('style5', '', '', '', '#880', 'g85'),
+   ('style5-striped', '', '', '', '#880', 'g93'),
+   ('style5-focus', '', '', '', '#da6', '#68d'),
+   ('style5bold', '', '', '', 'bold,#880', 'g85'),
+   ('style5bold-striped', '', '', '', 'bold,#880', 'g93'),
+   ('style5bold-focus', '', '', '', 'bold,#da6', '#68d'),
+   ('incoming', '', '', '', 'bold,g100', '#86d'),
+   ('outgoing', '', '', '', 'bold,g100', '#6a6'),
+   ('unread', '', '', '', '#880', '#a06'),
+]
 
-class DialogWalkerDummy(urwid.SimpleFocusListWalker):
-   def __init__(self):
-      data=[
-         DialogHeader('d1', [
-            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-            {'id':'m1', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-            {'id':'m1', 'isIncoming':True, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 1', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 1', 'bodyHtml':'', 'attachments':[], 'labels':('#favorite',)},
-         ]),
-         DialogHeader('d2', [
-            {'id':'m2', 'isIncoming':False, 'from':'user1@mail.ru', 'to':['byaka.life@gmail.com', 'user2@mail.ru'], 'cc':None, 'bcc':None, 'subject':'Some message 2', 'timestamp':datetime_now()-timedelta(days=1), 'bodyPlain':'Some text 2', 'bodyHtml':'', 'attachments':[], 'labels':('#unread',)},
-         ]),
+class Main:
+   def __init__(self, config, theme):
+      self.config=config
+      urwid.set_encoding("UTF-8")
+      self.apiExecutor=jsonrpc_requests.Server(self.config.api)
+      self.views=MagicDict({
+         'empty':urwid.Frame(urwid.SolidFill()),
+         'main':ViewMain(self.apiExecutor, events={
+            'dialogList.open': lambda w, *_: print('OPEN'),
+            'dialogList.close': lambda w, *_: print('CLOSE'),
+         }),
+      })
+      self.screenObj=ScreenFixed()
+      self.screenObj.set_terminal_properties(colors=256)
+      self.screenObj.reset_default_terminal_palette()
+      self.screenObj.register_palette(theme)
 
-      ]
-      super().__init__(data)
-
-class ScreenMain(object):
-   palette = [
-      ('body', '', '', '', 'g3', '#eef'),
-      ('style1', '', '', '', 'g85', '#866'),
-      ('style1-focus', '', '', '', 'g85', '#888'),
-      ('style1-select', '', '', '', 'g85,bold', '#68d'),
-      ('style2', '', '', '', 'g70', '#866'),
-      ('style2-focus', '', '', '', 'g70', '#888'),
-      ('style2-select', '', '', '', 'g70,bold', '#68d'),
-      ('style3', '', '', '', 'g3', 'g85'),
-      ('style3-striped', '', '', '', 'g3', 'g93'),
-      ('style3-focus', '', '', '', 'g85', '#68d'),
-      ('style3bold', '', '', '', 'bold,g3', 'g85'),
-      ('style3bold-focus', '', '', '', 'bold,g85', '#68d'),
-      ('style4', '', '', '', 'g40', 'g85'),
-      ('style4-striped', '', '', '', 'g40', 'g93'),
-      ('style4-focus', '', '', '', 'g40', '#68d'),
-      ('style4bold', '', '', '', 'bold,g40', 'g85'),
-      ('style4bold-striped', '', '', '', 'bold,g40', 'g93'),
-      ('style4bold-focus', '', '', '', 'bold,g40', '#68d'),
-      ('style5', '', '', '', '#880', 'g85'),
-      ('style5-striped', '', '', '', '#880', 'g93'),
-      ('style5-focus', '', '', '', '#da6', '#68d'),
-      ('style5bold', '', '', '', 'bold,#880', 'g85'),
-      ('style5bold-striped', '', '', '', 'bold,#880', 'g93'),
-      ('style5bold-focus', '', '', '', 'bold,#da6', '#68d'),
-      ('incoming', '', '', '', 'bold,g100', '#86d'),
-      ('outgoing', '', '', '', 'bold,g100', '#6a6'),
-      ('unread', '', '', '', '#880', '#a06'),
-   ]
-
-   def __init__(self, apiExecutor):
-      self.apiExecutor=apiExecutor
-
-      self.screen=urwid.raw_display.Screen()
-      self.screen.set_terminal_properties(colors=256)
-      self.screen.reset_default_terminal_palette()
-      self.screen.register_palette(self.palette)
-
-      self._dialogList=DialogList(DialogLoader(
-         self.apiExecutor,
-         'John Smith', None,
-         dateStart='today', dateEnd=True, direction=-1,
-         limitDates=5, limitResults=5,
-      ))
-      # self._dialogList=ListBox(DialogWalkerDummy())
-
-      self.layout=AttrWrap(Columns([
-         ('weight', 2, AttrWrap(ListBox(FiltersList()), 'style1', 'style1')),  # sidebar
-         ('weight', 8, self._dialogList),  # wrapper
-      ], 0), 'body')
-
-      self.layout.set_focus_column(0)
-      self.layout=urwid.Frame(self.layout)
+   def setView(self, view=None):
+      view=view or 'empty'
+      assert view in self.views
+      self.loopUrwid.widget=self.views[view]
 
    def run(self):
-      self.loop=urwid.MainLoop(self.layout, screen=self.screen, unhandled_input=self.input)
-      self.loop.run()
+      self.loop=urwid.AsyncioEventLoop()
+      self.loopUrwid=urwid.MainLoop(
+         self.views.empty,
+         screen=self.screenObj,
+         unhandled_input=self.cb_keyboardUnhandled,
+         handle_mouse=True,
+         pop_ups=True,
+         event_loop=self.loop
+      )
+      self.setView(self.config.defaultView)
+      self.loopUrwid.run()
 
-   def input(self, input, raw_input=None):
-      if 'q' in input or 'Q' in input: raise urwid.ExitMainLoop()
+   def cb_keyboardUnhandled(self, data, raw=None):
+      if 'q' in data or 'Q' in data: raise urwid.ExitMainLoop()
       return []
 
 
@@ -113,6 +85,9 @@ if __name__ == '__main__':
    p2f=Print2FIle()
    builtins.print=p2f.print
 
-   from jsonrpc_requests import Server
-   apiExecutor=Server('http://localhost:7001/api')
-   ScreenMain(apiExecutor).run()
+   CONFIG=MagicDict({
+      'api':'http://localhost:7001/api',
+      'defaultView':'main',
+   })
+
+   Main(CONFIG, THEME).run()

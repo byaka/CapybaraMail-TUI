@@ -24,7 +24,7 @@ class AttrWrapEx(AttrWrap):
    def __init__(self, w, *attrs):
       assert attrs
       self._original_map=list(attrs)
-      self.__super.__init__(w, attrs[0], focus_attr=(attrs[1] if len(attrs)>1 else None))
+      super().__init__(w, attrs[0], focus_attr=(attrs[1] if len(attrs)>1 else None))
 
 class WidgetPlaceholderEx(WidgetPlaceholder):
    def __getattr__(self,name):
@@ -66,10 +66,11 @@ def inherit_focus(children, focus):
 class MultiStyleWidget(FocusableWidget):
    def render(self, size, focus=False):
       inherit_focus(self, focus)
-      return self.__super.render(size, focus)
+      return super().render(size, focus)
 
 class SelectableMultiStyleWidget(FocusableWidget):
-   def __init__(self, w, *args, group=None, separate_style=False, **kwargs):
+   signals=['select']
+   def __init__(self, w, *args, group=None, separate_style=False, on_select=None, **kwargs):
       assert group is None or isinstance(group, dict)
       if separate_style:
          assert isinstance(w, AttrWrapEx) and len(w._original_map)>=3
@@ -77,7 +78,9 @@ class SelectableMultiStyleWidget(FocusableWidget):
       self._selected=False
       self._group={} if group is None else group
       self._group[hash(self)]=weakref.ref(self)
-      self.__super.__init__(w, *args, **kwargs)
+      super().__init__(w, *args, **kwargs)
+      if on_select:
+         urwid.connect_signal(self, 'select', on_select)
       self.__just_restyled=False
 
    def unselect(self):
@@ -85,6 +88,12 @@ class SelectableMultiStyleWidget(FocusableWidget):
       self._selected=False
       self.__just_restyled=True
       self._invalidate()
+
+   def group(self):
+      return self._group
+
+   def group_memebers(self):
+      return (o() for o in self._group.values())
 
    def unselect_others(self):
       for o in self._group.values():
@@ -98,6 +107,7 @@ class SelectableMultiStyleWidget(FocusableWidget):
       self._selected=True
       self.__just_restyled=True
       self._invalidate()
+      self._emit('select')
 
    def selected(self):
       for o in self._group.values():
@@ -108,14 +118,18 @@ class SelectableMultiStyleWidget(FocusableWidget):
 
    def keypress(self, size, key):
       if self._command_map[key]!=ACTIVATE:
-         return self.__super.keypress(size, key)
+         return super().keypress(size, key)
       self.select()
 
    def mouse_event(self, size, event, button, x, y, focus):
-      if button!=1 or not is_mouse_press(event):
-         return self.__super.mouse_event(size, event, button, x, y, focus)
-      self.select()
-      return True
+      if is_mouse_press(event):
+         if button==4 or button==5:
+            self.keypress(size, 'up' if button==4 else 'down')
+            return True
+         if button==1:
+            self.select()
+            return True
+      return super().mouse_event(size, event, button, x, y, focus)
 
    def render(self, size, focus=False):
       if self.__separate_style:
@@ -127,7 +141,28 @@ class SelectableMultiStyleWidget(FocusableWidget):
       else:
          focus=self._selected or focus
       inherit_focus(self, focus)
-      return self.__super.render(size, focus)
+      return super().render(size, focus)
+
+class FiltersList(WidgetPlaceholder):
+   def __init__(self, data):
+      self.data=data
+      self.refresh()
+      self._w=urwid.ListBox(urwid.SimpleFocusListWalker(self._items))
+      self._w=AttrWrapEx(self._w, 'style1', 'style1')
+      super().__init__(self._w)
+
+   def refresh(self):
+      res1=[]
+      res2=[]
+      for k, v in self.data.items():
+         assert v.get('type')
+         assert v.get('name')
+         # assert v.get('query')
+         if v['type']=='main': to=res1
+         elif v['type']=='more': to=res2
+         else: continue
+         to.append(FilterItem(k, v, showCounter=v.get('count'), showDescr=v.get('descr')))
+      self._items=res1+[Text('More:', align='center', wrap='space')]+res2
 
 class FilterItem(SelectableMultiStyleWidget,):
    def __init__(self, val, data, showCounter=True, showDescr=True):
@@ -137,15 +172,15 @@ class FilterItem(SelectableMultiStyleWidget,):
       self._w_count=None
       if showCounter:
          self._w_count=Text('', align='right')
-         self.set_counter(0)
+         self.set_counter(self.data['count'])
       self._w_descr=None
       if showDescr:
-         self._w_descr=Text(f'{self.data["descr"]}')
+         self._w_descr=Text(f"{self.data['descr']}")
          self._w_descr=AttrWrapEx(self._w_descr, 'style2', 'style2-focus', 'style2-select')
       w1=Columns([self._w_name, self._w_count], 1) if showCounter else self._w_name
       w=Pile([w1, self._w_descr]) if showDescr else w1
       w=AttrWrapEx(Padding(w, left=1, right=1), 'style1', 'style1-focus', 'style1-select')
-      self.__super.__init__(w, group=_FILTERS_GROUP, separate_style=True)
+      super().__init__(w, group=_FILTERS_GROUP, separate_style=True)
 
    def set_counter(self, val):
       self.__count=val
@@ -153,22 +188,51 @@ class FilterItem(SelectableMultiStyleWidget,):
 
    counter=property(lambda self: self.__count, set_counter)
 
-class DialogList(urwid.ListBox):
-   def __init__(self, loader, andLoad=True):
-      self.__super.__init__(DialogWalker(loader, andLoad))
+class DialogList(urwid.AttrMap):
+   MOUSE_WHEEL_SPEED=3
+   signals=['open', 'close']
+
+   def __init__(self, loader, andLoad=True, on_open=None, on_close=None):
+      self.loader=loader
+      self.walker=DialogWalker(loader, andLoad)
+      self._w=urwid.ListBox(self.walker)
+      super().__init__(self._w, 'style0', 'style0')
+      if on_open:
+         urwid.connect_signal(self, 'open', on_open)
+      if on_close:
+         urwid.connect_signal(self, 'close', on_close)
 
    def keypress(self, size, key):
-      if self._command_map[key]==ACTIVATE:
-         w, pos=self.focus, self.focus_position
-         if isinstance(w, WidgetPlaceholder):
-            if isinstance(w.original_widget, DialogHeader):
-               w.original_widget=w.original_widget.collapsed
-            elif isinstance(w.original_widget, DialogStory):
-               w.original_widget=w.original_widget.original
-            else: return
-            self.body._modified()
-      else:
-         return self.__super.keypress(size, key)
+      w, pos=self._w.focus, self._w.focus_position
+      if isinstance(w, WidgetPlaceholder):
+         w2=w.original_widget
+         if(
+            (key=='right' and isinstance(w2, DialogHeader)) or
+            (key=='left' and isinstance(w2, DialogStory))
+         ):
+            isOpen=isinstance(w2, DialogStory)
+            w.original_widget=getattr(w.original_widget, 'original' if isOpen else 'collapsed')
+            self._emit('close' if isOpen else 'open')
+            self._w.body._modified()
+            return
+      if isinstance(w, Message):
+         if self._command_map[key]==ACTIVATE:
+            print(self._w.focus.data['bodyHtml'] or self._w.focus.data['bodyPlain'])
+      return super().keypress(size, key)
+
+   def mouse_event(self, size, event, button, x, y, focus):
+      if is_mouse_press(event):
+         if button==4 or button==5:
+            #! not works correctly
+            # self._w.set_focus(
+            #    self._w.body.get_shifted(self._w.body.focus, (-1 if button==4 else 1)*self.MOUSE_WHEEL_SPEED)[1],
+            #    coming_from='above' if button==4 else 'below',
+            # )
+            # return True
+            pass
+            self.keypress(size, 'up' if button==4 else 'down')
+            return True
+      return super().mouse_event(size, event, button, x, y, focus)
 
 class DialogWalker(urwid.ListWalker):
    def __init__(self, loader, andLoad=True):
@@ -203,16 +267,16 @@ class DialogWalker(urwid.ListWalker):
 
    def _get_nearest_dialog(self, direction, date, dialog):
       if date not in self._data:
-         return self._get_nearest_date(direction, date)
+         return self._get_nearest_date((-1 if direction<0 else +1), date)
       dialog+=direction
       if dialog>=0 and dialog<len(self._data[date]):
          msg=None if direction>0 or not self.isOpened(date, dialog) else self._data[date][dialog].messageCount-1
          return date, dialog, msg
-      return self._get_nearest_date(direction, date)
+      return self._get_nearest_date((-1 if direction<0 else +1), date)
 
    def _get_nearest_msg(self, direction, date, dialog, msg):
       if date not in self._data:
-         return self._get_nearest_date(direction, date)
+         return self._get_nearest_date((-1 if direction<0 else +1), date)
       if dialog<0 or dialog>=len(self._data[date]):
          return self._get_nearest_dialog(direction, date, dialog)
       if self.isOpened(date, dialog):
@@ -264,6 +328,11 @@ class DialogWalker(urwid.ListWalker):
       print(f'GET_PREV {pos} --> {i}')
       return w, i
 
+   def get_shifted(self, pos, step):
+      w, i=self._get(step, *pos)
+      print(f'GET_SHIFTED ({step}) {pos} --> {i}')
+      return w, i
+
    def get_focus(self):
       w, i=self._get(0, *self.focus)
       print(f'GET_FOCUS {i}')
@@ -280,7 +349,7 @@ class DialogStory(MultiStyleWidget,):
       self.original=original
       self._w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
       self._w_child=()
-      self.__super.__init__(self._w)
+      super().__init__(self._w)
 
    @property
    def messageList(self):
@@ -294,6 +363,8 @@ class DialogStory(MultiStyleWidget,):
       self.original.makeStriped(striped)
 
 class DialogHeader(MultiStyleWidget,):
+   STRIPED_STYLE_SUFFIX='-striped'
+
    def __init__(self, val, data, striped=False):
       self.value=val
       self.data=data
@@ -302,7 +373,7 @@ class DialogHeader(MultiStyleWidget,):
       self.__msgs=None
       self._w=AttrWrapEx(self._w, 'style3', 'style3-focus')
       self.makeStriped(striped)
-      self.__super.__init__(self._w)
+      super().__init__(self._w)
 
    def makeStriped(self, striped):
       for o in (
@@ -311,9 +382,9 @@ class DialogHeader(MultiStyleWidget,):
       ):
          if not isinstance(o, AttrWrapEx): continue
          old_attr=o._original_map[0]
-         s=old_attr.endswith('-striped')
+         s=old_attr.endswith(self.STRIPED_STYLE_SUFFIX)
          if s==striped: continue
-         new_attr=(old_attr+'-striped') if striped else old_attr[:-len('-strip')]
+         new_attr=(old_attr+self.STRIPED_STYLE_SUFFIX) if striped else old_attr[:-len(self.STRIPED_STYLE_SUFFIX)]
          o._original_map[0]=new_attr
          if o.attr!=new_attr:
             o.attr=new_attr
@@ -440,7 +511,7 @@ class DialogHeader(MultiStyleWidget,):
       return res
 
    def keypress(self, size, key):
-      return self.__super.keypress(size, key)
+      return super().keypress(size, key)
 
 class Message(MultiStyleWidget,):
    def __init__(self, val, data):
@@ -473,7 +544,7 @@ class Message(MultiStyleWidget,):
       ], 0)
       s='incoming' if self.data['isIncoming'] else 'outgoing'
       w=AttrWrapEx(w, s)
-      self.__super.__init__(w)
+      super().__init__(w)
 
    def refresh(self):
       me=frozenset(['byaka.life@gmail.com', 'genryrar@gmail.com', 'byaka@buber.ru', 'byaka@clevit.ru'])
@@ -514,5 +585,5 @@ class Message(MultiStyleWidget,):
       # last message
       val=self.data['bodyPlain'] or self.data['bodyHtml']
       val='\n'.join(s for s in val.split('\n') if not s.startswith('>'))
-      val=val.replace('\r', '')
+      val=val.replace('\r', '').replace('\t', '   ')
       self._w_msg.set_text(val)

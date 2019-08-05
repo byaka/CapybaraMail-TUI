@@ -1,12 +1,34 @@
 #!/usr/bin/python3
-import sys, os, re, code
+import sys, os, re, code, platform
 import datetime
 from datetime import timedelta
+import urwid
 
 NULL=object()
 
 datetime_now=datetime.datetime.now
 datetime_today=datetime.datetime.today
+
+class ScreenFixed(urwid.raw_display.Screen):
+   def write(self, data):
+      if "Microsoft" in platform.platform():
+         # replace urwid's SI/SO, which produce artifacts under WSL.
+         # https://github.com/urwid/urwid/issues/264#issuecomment-358633735
+         # Above link describes the change.
+         data = re.sub("[\x0e\x0f]", "", data)
+      super().write(data)
+
+class MagicDict(dict):
+   """
+   Get and set values like in Javascript (dict.<key>).
+   """
+   def __getattr__(self, k):
+      if k[:2]=='__': raise AttributeError(k)
+      return self.__getitem__(k)
+
+   __setattr__=dict.__setitem__
+   __delattr__=dict.__delitem__
+   __reduce__=dict.__reduce__
 
 class Print2FIle(object):
    def __init__(self, path=None):
