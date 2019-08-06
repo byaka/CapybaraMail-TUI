@@ -26,20 +26,28 @@ class UrwidEventBubbling:
       self.original_supported[sig_cls]=old
       return result
 
+   @staticmethod
+   def _cls_good_more(obj, ref):
+      if isinstance(ref, dict):
+         for k in ('contents', '_body', '_original_widget'):
+            if k in ref and ref[k] is obj: return True
+      return False
+
+   _CLS_GOOD1=(urwid.ListWalker, urwid.Widget, urwid.WidgetWrap)
+   _CLS_GOOD2=(urwid.MonitoredList,)
    def emit(self, obj, name, *args):
       result=self.original_emit(obj, name, *args)
       #find parents
-      good1=(urwid.ListWalker, urwid.Widget, urwid.WidgetWrap)
-      good2=(urwid.MonitoredList,)
-      tQueue=[gc.get_referrers(obj)]
+      tQueue=[(obj, gc.get_referrers(obj))]
       while tQueue:
-         for o in tQueue.pop():
-            # if isinstance(o, good1+good2+(dict,)):
-            #    print('~', type(o), o)
-            if isinstance(o, good1):
-               self.emit(o, name, *args)
-            elif isinstance(o, good2) or (isinstance(o, dict) and ('_body' in o or '_original_widget' in o)):
-               tQueue.append(gc.get_referrers(o))
+         obj, tArr=tQueue.pop()
+         for ref in tArr:
+            # if isinstance(ref, self._CLS_GOOD1+self._CLS_GOOD2+(dict,)):
+            #    print('~', type(ref), ref)
+            if isinstance(ref, self._CLS_GOOD1):
+               self.emit(ref, name, *args)
+            elif isinstance(ref, self._CLS_GOOD2) or self._cls_good_more(obj, ref):
+               tQueue.append((ref, gc.get_referrers(ref)))
       return result
 
    connect_signal=connect
