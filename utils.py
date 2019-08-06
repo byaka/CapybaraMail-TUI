@@ -2,6 +2,7 @@
 import sys, os, re, code, platform
 import datetime
 from datetime import timedelta
+from collections import deque
 import urwid
 
 NULL=object()
@@ -18,7 +19,7 @@ class UrwidEventBubbling:
       self.original_emit=original._signals.emit
 
    def connect(self, obj, name, *args, **kwargs):
-      sig_cls = obj.__class__
+      sig_cls=obj.__class__
       old=self.original_supported.get(sig_cls, [])
       if name not in old:
          self.original_supported[sig_cls]=old+[name]
@@ -29,8 +30,9 @@ class UrwidEventBubbling:
    @staticmethod
    def _cls_good_more(obj, ref):
       if isinstance(ref, dict):
-         for k in ('contents', '_body', '_original_widget'):
-            if k in ref and ref[k] is obj: return True
+         if 'contents' in ref and ref['contents'] is obj: return True
+         if '_body' in ref and ref['_body'] is obj: return True
+         if '_original_widget' in ref and ref['_original_widget'] is obj: return True
       return False
 
    _CLS_GOOD1=(urwid.ListWalker, urwid.Widget, urwid.WidgetWrap)
@@ -38,17 +40,18 @@ class UrwidEventBubbling:
    def emit(self, obj, name, *args):
       result=self.original_emit(obj, name, *args)
       #find parents
-      tQueue=[(obj, gc.get_referrers(obj))]
+      tQueue=deque(((obj, gc.get_referrers(obj)),))
+      _good1, _good2, _goodf=self._CLS_GOOD1, self._CLS_GOOD2, self._cls_good_more
+      _qAppend, _qPop=tQueue.appendleft, tQueue.pop
+      _emit=self.original_emit
       while tQueue:
-         obj, tArr=tQueue.pop()
+         obj, tArr=_qPop()
          for ref in tArr:
-            # if isinstance(ref, self._CLS_GOOD1+self._CLS_GOOD2+(dict,)):
-            #    print('~', type(ref), ref)
-            if isinstance(ref, self._CLS_GOOD1):
-               #! убрать рекурсию, перейти на стэк
-               self.emit(ref, name, *args)
-            elif isinstance(ref, self._CLS_GOOD2) or self._cls_good_more(obj, ref):
-               tQueue.append((ref, gc.get_referrers(ref)))
+            # if isinstance(ref, dict): print('?', type(ref), ref)
+            if isinstance(ref, _good1): _emit(ref, name, *args)
+            elif isinstance(ref, _good2) or _goodf(obj, ref): pass
+            else: continue
+            _qAppend((ref, gc.get_referrers(ref)))
       return result
 
    connect_signal=connect
@@ -71,8 +74,7 @@ class UrwidEventWrapper:
    @staticmethod
    def monkey_patch():
       from urwid import signals as urwid_signals
-      o=UrwidEventBubbling(urwid_signals)
-      globals()['urwidEventBubbling']._obj=o
+      o=urwidEventBubbling._obj=UrwidEventBubbling(urwid_signals)
       urwid_signals.connect_signal=o.connect_signal
       urwid_signals.emit_signal=o.emit_signal
 
