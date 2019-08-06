@@ -5,8 +5,11 @@ import urwid
 from urwid import Columns, Pile, AttrWrap, ListBox, Text, Divider, Padding
 from widgets import FiltersList, DialogList, AttrWrapEx
 
-from utils import NULL, LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
+from utils import urwidEventBubbling, NULL, LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
 from dialogLoader import DialogLoader
+from collections import defaultdict
+
+urwidEventBubbling.monkey_patch()
 
 class ViewBase(urwid.Frame):
    def __init__(self, apiExecutor, events=None):
@@ -14,6 +17,7 @@ class ViewBase(urwid.Frame):
       self.childs=[]
       self._w_init()
       self._bind_events(events)
+      self._bind_later_queue=defaultdict(list)
       super().__init__(self._w)
 
    def _w_init(self):
@@ -29,7 +33,12 @@ class ViewBase(urwid.Frame):
          assert hasattr(self, w)
          w=getattr(self, w)
          assert isinstance(w, urwid.Widget)
-         urwid.connect_signal(w, ev, f)
+         urwidEventBubbling.connect_signal(w, ev, f)
+
+   def _bind_events_later(self, ev):
+      if ev not in self._bind_later_queue: return
+      tArr=self._bind_later_queue.pop(ev)
+
 
 class ViewMain(ViewBase):
    def _w_init(self):

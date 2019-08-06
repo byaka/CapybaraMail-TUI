@@ -2,9 +2,8 @@
 import sys, os, datetime, time
 
 import urwid
-import urwid.raw_display
 
-from utils import ScreenFixed, MagicDict, NULL, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
+from utils import urwidEventBubbling, ScreenFixed, MagicDict, NULL, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
 
 import jsonrpc_requests
 
@@ -40,22 +39,18 @@ THEME = [
    ('unread', '', '', '', '#880', '#a06'),
 ]
 
-class Main:
+class ControllerBase(object):
    def __init__(self, config, theme):
       self.config=config
       urwid.set_encoding("UTF-8")
       self.apiExecutor=jsonrpc_requests.Server(self.config.api)
-      self.views=MagicDict({
-         'empty':urwid.Frame(urwid.SolidFill()),
-         'main':ViewMain(self.apiExecutor, events={
-            'dialogList.open': lambda w, *_: print('OPEN'),
-            'dialogList.close': lambda w, *_: print('CLOSE'),
-         }),
-      })
+      self.views=MagicDict()
+      self.views.empty=urwid.Frame(urwid.SolidFill())
       self.screenObj=ScreenFixed()
       self.screenObj.set_terminal_properties(colors=256)
       self.screenObj.reset_default_terminal_palette()
       self.screenObj.register_palette(theme)
+      self._init()
 
    def setView(self, view=None):
       view=view or 'empty'
@@ -79,6 +74,23 @@ class Main:
       if 'q' in data or 'Q' in data: raise urwid.ExitMainLoop()
       return []
 
+class ControllerMain(ControllerBase):
+   def _init(self):
+      self.views.main=ViewMain(self.apiExecutor, events={
+         'filtersList.select': self.cb_filtersList_select,
+         'dialogList.open': self.cb_dialogList_open,
+         'dialogList.close': self.cb_dialogList_close,
+      })
+
+   def cb_dialogList_open(self, w, *args):
+      pass
+
+   def cb_dialogList_close(self, w, *args):
+      pass
+
+   def cb_filtersList_select(self, w, *args):
+      print('SELECT', w)
+
 
 if __name__ == '__main__':
    import builtins
@@ -90,4 +102,4 @@ if __name__ == '__main__':
       'defaultView':'main',
    })
 
-   Main(CONFIG, THEME).run()
+   ControllerMain(CONFIG, THEME).run()
