@@ -70,6 +70,7 @@ class MultiStyleWidget(FocusableWidget):
 
 class SelectableMultiStyleWidget(FocusableWidget):
    signals=['select']
+
    def __init__(self, w, *args, group=None, separate_style=False, on_select=None, **kwargs):
       assert group is None or isinstance(group, dict)
       if separate_style:
