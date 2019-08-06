@@ -45,6 +45,7 @@ class UrwidEventBubbling:
             # if isinstance(ref, self._CLS_GOOD1+self._CLS_GOOD2+(dict,)):
             #    print('~', type(ref), ref)
             if isinstance(ref, self._CLS_GOOD1):
+               #! убрать рекурсию, перейти на стэк
                self.emit(ref, name, *args)
             elif isinstance(ref, self._CLS_GOOD2) or self._cls_good_more(obj, ref):
                tQueue.append((ref, gc.get_referrers(ref)))
