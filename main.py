@@ -12,6 +12,8 @@ from views import ViewMain
 THEME = [
    ('style0', '', '', '', 'g3', '#eef'),
    ('style1', '', '', '', 'g85', '#866'),
+   ('style1-reverse', '', '', '', 'g85,bold', '#a88'),
+   ('style1bold', '', '', '', 'g85,bold', '#866'),
    ('style1-focus', '', '', '', 'g85', '#888'),
    ('style1-select', '', '', '', 'g85,bold', '#68d'),
    ('style2', '', '', '', 'g70', '#866'),

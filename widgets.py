@@ -19,7 +19,7 @@ class TextFocusable(Text):
 
    def mouse_event(self, size, event, button, x, y, focus): return True
 
-#! былоб здорово расширить эту обретку, добавив поддержку различных именованных стилей вместо индексных, ну и заодно удобный метод для модификации и получения по имени. но придется переписать существующий код фокусировки
+#! былоб здорово расширить эту обертку, добавив поддержку различных именованных стилей вместо индексных, ну и заодно удобный метод для модификации и получения по имени. но придется переписать существующий код фокусировки
 class AttrWrapEx(AttrWrap):
    def __init__(self, w, *attrs):
       assert attrs
@@ -34,8 +34,6 @@ class WidgetPlaceholderEx(WidgetPlaceholder):
       using AttrMap and .base_widget or .original_widget instead.
       """
       return getattr(self._original_widget, name)
-
-_FILTERS_GROUP={}
 
 class FocusableWidget(WidgetWrap):
    def selectable(self):
@@ -63,7 +61,7 @@ def inherit_focus(children, focus):
          else:
             tArr.extend(w.contents)
 
-class MultiStyleWidget(FocusableWidget):
+class FocusableMultiStyleWidget(FocusableWidget):
    def render(self, size, focus=False):
       inherit_focus(self, focus)
       return super().render(size, focus)
@@ -166,7 +164,7 @@ class FiltersList(WidgetPlaceholder):
       self._items=res1+[Text('More:', align='center', wrap='space')]+res2
 
 class FilterItem(SelectableMultiStyleWidget,):
-   def __init__(self, val, data, showCounter=True, showDescr=True):
+   def __init__(self, val, data, showCounter=True, showDescr=True, group={}):
       self.value=val
       self.data=data
       self._w_name=TextFocusable(f'{self.data["name"]}')
@@ -181,7 +179,7 @@ class FilterItem(SelectableMultiStyleWidget,):
       w1=Columns([self._w_name, self._w_count], 1) if showCounter else self._w_name
       w=Pile([w1, self._w_descr]) if showDescr else w1
       w=AttrWrapEx(Padding(w, left=1, right=1), 'style1', 'style1-focus', 'style1-select')
-      super().__init__(w, group=_FILTERS_GROUP, separate_style=True)
+      super().__init__(w, group=group, separate_style=True)
 
    def set_counter(self, val):
       self.__count=val
@@ -345,7 +343,7 @@ class DialogWalker(urwid.ListWalker):
       print(f'SET_FOCUS {old} --> {pos}')
       self._modified()
 
-class DialogStory(MultiStyleWidget,):
+class DialogStory(FocusableMultiStyleWidget,):
    def __init__(self, original):
       self.original=original
       self._w=AttrWrapEx(TextFocusable('collapsed dialog dummy', align='center', wrap='any'), 'style3', 'style3-focus')
@@ -363,7 +361,7 @@ class DialogStory(MultiStyleWidget,):
    def makeStriped(self, striped):
       self.original.makeStriped(striped)
 
-class DialogHeader(MultiStyleWidget,):
+class DialogHeader(FocusableMultiStyleWidget,):
    STRIPED_STYLE_SUFFIX='-striped'
 
    def __init__(self, val, data, striped=False):
@@ -514,7 +512,7 @@ class DialogHeader(MultiStyleWidget,):
    def keypress(self, size, key):
       return super().keypress(size, key)
 
-class Message(MultiStyleWidget,):
+class Message(FocusableMultiStyleWidget,):
    def __init__(self, val, data):
       self.value=val
       self.data=data
@@ -532,12 +530,12 @@ class Message(MultiStyleWidget,):
          (2, self._w_indicator_inc),
          AttrWrapEx(Padding(Pile([
             Columns([
-               ('weight', 70, Columns([(2, self._w_indicator_faw), self._w_subject], 0)),
-               ('weight', 30, self._w_timestamp),
+               ('weight', 7, Columns([(2, self._w_indicator_faw), self._w_subject], 0)),
+               ('weight', 3, self._w_timestamp),
             ], 2),
             Columns([
-               ('weight', 50, Columns([(6, self._w_label_membersMain), self._w_membersMain], 0)),
-               ('weight', 50, Columns([(8, self._w_label_membersMore), self._w_membersMore], 0)),
+               ('weight', 1, Columns([(6, self._w_label_membersMain), self._w_membersMain], 0)),
+               ('weight', 1, Columns([(8, self._w_label_membersMore), self._w_membersMore], 0)),
             ], 3),
             Pile([Divider(), self._w_msg]),
             AttrWrapEx(Divider(LINE_H), 'style3', 'style3-focus'),
@@ -588,3 +586,77 @@ class Message(MultiStyleWidget,):
       val='\n'.join(s for s in val.split('\n') if not s.startswith('>'))
       val=val.replace('\r', '').replace('\t', '   ')
       self._w_msg.set_text(val)
+
+
+class HotkeyItem(Columns,):
+   _RE_f=re.compile(r'(\W*)f(\d{1,2})')
+   def __init__(self, key, name, cb):
+      self.key=key
+      self.cb=cb
+      super().__init__([
+         AttrWrap(Text(self._key2human(key)+' '), 'style1-reverse'),
+         (len(name), Text(name)),
+      ], 0)
+
+   def _key2human(self, key):
+      key=key.replace(' ', '+')
+      key=key.replace('shift', '⇧')
+      key=key.replace('enter', '↵')
+      key=key.replace('delete', '⌦')
+      key=key.replace('backspace', '⌫')
+      key=key.replace('space', '␣')
+      key=key.replace('ctrl', '✲ ')
+      key=key.replace('meta', '⌘ ')
+      key=key.replace('esc', 'Esc')
+      key=self._RE_f.sub('\\1F\\2', key)
+      return key
+
+   def pack(self, size, focus=False):
+      sw, sh=0, 0
+      for w, _ in self.contents:
+         sw2, sh2=w.pack(size, focus)
+         sw+=sw2
+         sh=max(sh, sh2)
+      return sw, sh
+
+   def mouse_event(self, size, event, button, x, y, focus):
+      if event=='mouse press' and button==1:
+         self.cb(size, self.key)
+      return False
+
+class HotkeyBar(AttrWrap,):
+   def __init__(self, keyMap=None):
+      self._keyMap=keyMap or {}
+      self._state=None
+      self._w=Columns([], 1)
+      self.refresh()
+      super().__init__(self._w, 'style1')
+
+   def refresh(self):
+      tMap=self._keyMap
+      res=[]
+      if self._state is not None:
+         n, tMap=self._state
+         w=AttrWrap(Text(f'{n}:'), 'style1bold')
+         res.append((w, self._w.options('pack')))
+         res.append((HotkeyItem('esc', '', self.keypress), self._w.options('pack')))
+      for key, o in tMap.items():
+         res.append((HotkeyItem(key, o[0], self.keypress), self._w.options('pack')))
+      self._w.contents=res
+
+   def keypress(self, size, key):
+      tMap=self._keyMap if self._state is None else self._state[1]
+      if key=='esc' and self._state is not None:
+         self._state=None
+         self.refresh()
+      elif key in tMap:
+         n, v=tMap[key]
+         print('HOTKEY', key, n, v)
+         if callable(v):
+            v(n)
+            self._state=None
+         else:
+            self._state=(n, v)
+         self.refresh()
+      else:
+         return key

@@ -3,7 +3,7 @@ import sys, os, datetime, time
 
 import urwid
 from urwid import Columns, Pile, AttrWrap, ListBox, Text, Divider, Padding
-from widgets import FiltersList, DialogList, AttrWrapEx
+from widgets import FiltersList, DialogList, AttrWrapEx, HotkeyBar
 
 from utils import urwidEventBubbling, NULL, LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime, Print2FIle
 from dialogLoader import DialogLoader
@@ -13,15 +13,17 @@ urwidEventBubbling.monkey_patch()
 
 class ViewBase(urwid.Frame):
    def __init__(self, apiExecutor, events=None):
+      self.inited=False
       self.apiExecutor=apiExecutor
       self.childs=[]
       self._w_init()
+      self.inited=True
       self._bind_events(events)
       self._bind_later_queue=defaultdict(list)
       super().__init__(self._w)
 
    def _w_init(self):
-      self._w=None
+      self._w=getattr(self, '_w', None)
 
    def reload(self):
       for o in self.childs:
@@ -36,11 +38,30 @@ class ViewBase(urwid.Frame):
          urwidEventBubbling.connect_signal(w, ev, f)
 
    def _bind_events_later(self, ev):
+      #? был нужен когда небыло всплытия событий, нужен ли сейчас?
       if ev not in self._bind_later_queue: return
       tArr=self._bind_later_queue.pop(ev)
 
+   def keypress(self, size, key):
+      return super().keypress(size, key)
 
-class ViewMain(ViewBase):
+class ViewWithHotkeys(ViewBase):
+   def _w_init(self):
+      self._keyMap=getattr(self, '_keyMap', {})
+      self._w_hotkeybar=HotkeyBar(self._keyMap)
+      self._w=urwid.Frame(self._w, footer=self._w_hotkeybar)
+      super()._w_init()
+
+   def hotkeys(self, keyMap=None):
+      self._keyMap=keyMap
+      if self.inited:
+         self._w_hotkeybar.refresh()
+
+   def keypress(self, size, key):
+      if self._w_hotkeybar.keypress(size, key) is None: return
+      return super().keypress(size, key)
+
+class ViewMain(ViewWithHotkeys):
    def _w_init(self):
       self.dialogLoader=DialogLoader(
          self.apiExecutor,
@@ -70,3 +91,17 @@ class ViewMain(ViewBase):
          ('weight', 8, self.dialogList),  # wrapper
       ], 0), 'style0')
       self.childs+=[self.dialogList, self.filtersList]
+      #! в будущем эта карта будет модифицироваться при смене фокуса, таким образом горячие клавиши будут контекстными
+      self.hotkeys({
+         'f2':('One', lambda *_: print('HK-1')),
+         'D':('Three', lambda *_: print('HK-SHIFT-D')),
+         'ctrl d':('FourFive', lambda *_: print('HK-CTRL-D')),
+         'meta d':('FourFive', lambda *_: print('HK-ALT-D')),
+         'enter':('FourFive', lambda *_: print('HK-ENTER')),
+         'm':('Move to', {
+            '1':('One', lambda *_: print('HK-M,1')),
+            '2':('Two', lambda *_: print('HK-M,2')),
+            '3':('Three', lambda *_: print('HK-M,3')),
+         }),
+      })
+      super()._w_init()
