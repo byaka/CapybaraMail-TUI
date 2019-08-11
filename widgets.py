@@ -8,7 +8,7 @@ from urwid import WidgetWrap, Pile, Columns, Text, Padding, AttrWrap, Selectable
 from urwid.command_map import ACTIVATE, CURSOR_LEFT, CURSOR_RIGHT
 from urwid.util import is_mouse_press
 
-from utils import LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
+from utils import isInt, LINE_H, datetime, timedelta, datetime_now, datetime_today, to_date, to_datetime
 
 class TextFocusable(Text):
    """
@@ -145,6 +145,8 @@ class SelectableMultiStyleWidget(FocusableWidget):
 class FiltersList(WidgetPlaceholder):
    def __init__(self, data):
       self.data=data
+      self._items=[]
+      self._itemsMap={}
       self.refresh()
       self._w=urwid.ListBox(urwid.SimpleFocusListWalker(self._items))
       self._w=AttrWrapEx(self._w, 'style1', 'style1')
@@ -160,30 +162,37 @@ class FiltersList(WidgetPlaceholder):
          if v['type']=='main': to=res1
          elif v['type']=='more': to=res2
          else: continue
-         to.append(FilterItem(k, v, showCounter=v.get('count'), showDescr=v.get('descr')))
-      self._items=res1+[Text('More:', align='center', wrap='space')]+res2
+         if k not in self._itemsMap:
+            self._itemsMap[k]=FilterItem(k, v, showDescr=v.get('descr'))
+         else:
+            self._itemsMap[k].set_counter(v.get('count', ''))
+         to.append(self._itemsMap[k])
+      self._items*=0
+      self._items+=res1+[Text('More:', align='center', wrap='space')]+res2
+
+   def set_counter(self, key, value):
+      self._itemsMap[key].set_counter(value)
 
 class FilterItem(SelectableMultiStyleWidget,):
-   def __init__(self, val, data, showCounter=True, showDescr=True, group={}):
+   def __init__(self, val, data, showDescr=True, group={}):
       self.value=val
       self.data=data
       self._w_name=TextFocusable(f'{self.data["name"]}')
-      self._w_count=None
-      if showCounter:
-         self._w_count=Text('', align='right')
-         self.set_counter(self.data['count'])
+      self._w_count=Text('', align='right')
+      self.set_counter(self.data.get('count'))
       self._w_descr=None
       if showDescr:
          self._w_descr=Text(f"{self.data['descr']}")
          self._w_descr=AttrWrapEx(self._w_descr, 'style2', 'style2-focus', 'style2-select')
-      w1=Columns([self._w_name, self._w_count], 1) if showCounter else self._w_name
+      w1=Columns([self._w_name, self._w_count], 1)
       w=Pile([w1, self._w_descr]) if showDescr else w1
       w=AttrWrapEx(Padding(w, left=1, right=1), 'style1', 'style1-focus', 'style1-select')
       super().__init__(w, group=group, separate_style=True)
 
    def set_counter(self, val):
       self.__count=val
-      self._w_count.set_text(f'({self.__count})')
+      s=f'({val})' if isInt(val) else ''
+      self._w_count.set_text(s)
 
    counter=property(lambda self: self.__count, set_counter)
 

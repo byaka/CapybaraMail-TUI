@@ -78,10 +78,10 @@ class ControllerBase(object):
 
 class ControllerMain(ControllerBase):
    def _init(self):
-      self.views.main=ViewMain(self.apiExecutor, events={
-         'filtersList.select': self.cb_filtersList_select,
-         'dialogList.open': self.cb_dialogList_open,
-         'dialogList.close': self.cb_dialogList_close,
+      self.views.main=ViewMain(self.apiExecutor, self.config, events={
+         'sidebar_filters.select': self.cb_filtersList_select,
+         'dialogs.open': self.cb_dialogList_open,
+         'dialogs.close': self.cb_dialogList_close,
       })
 
    def cb_dialogList_open(self, w, *args):
@@ -100,8 +100,21 @@ if __name__ == '__main__':
    builtins.print=p2f.print
 
    CONFIG=MagicDict({
+      'user':'John Smith',
       'api':'http://localhost:7001/api',
       'defaultView':'main',
+      'filters':{
+         '#inbox': {'type':'sidebar.main', 'name':'Inbox', 'descr':'Untagged dialogs'},
+         '#backlog': {'type':'sidebar.main', 'name':'Backlog', 'descr':'Todo tasks'},
+         '#notes': {'type':'sidebar.main', 'name':'Notes', 'descr':'Useful info'},
+         '#custom1': {'type':'sidebar.main', 'name':'Custom 1', 'descr':'Created by user'},
+         '#done': {'type':'sidebar.more', 'name':'Done', 'descr':'Completed  tasks'},
+         '#spam': {'type':'sidebar.more', 'name':'Spam', 'descr':'Marked as spam'},
+         '#all': {'type':'sidebar.more', 'name':'All', 'descr':''},
+         '#my1': {'type':'sidebar.more', 'name':'My 1', 'descr':''},
+         '#my2': {'type':'sidebar.more', 'name':'My 2', 'descr':''},
+      }
+
    })
 
    ControllerMain(CONFIG, THEME).run()

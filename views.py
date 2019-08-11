@@ -12,9 +12,10 @@ from collections import defaultdict
 urwidEventBubbling.monkey_patch()
 
 class ViewBase(urwid.Frame):
-   def __init__(self, apiExecutor, events=None):
+   def __init__(self, apiExecutor, config, events=None):
       self.inited=False
       self.apiExecutor=apiExecutor
+      self.config=config
       self.childs=[]
       self._w_init()
       self.inited=True
@@ -25,9 +26,9 @@ class ViewBase(urwid.Frame):
    def _w_init(self):
       self._w=getattr(self, '_w', None)
 
-   def reload(self):
+   def refresh(self):
       for o in self.childs:
-         if hasattr(o, 'reload'): o.reload()
+         if hasattr(o, 'refresh'): o.refresh()
 
    def _bind_events(self, events):
       for k, f in events.items():
@@ -62,35 +63,28 @@ class ViewWithHotkeys(ViewBase):
       return super().keypress(size, key)
 
 class ViewMain(ViewWithHotkeys):
+   def loadData(self):
+      pass
+
    def _w_init(self):
       self.dialogLoader=DialogLoader(
          self.apiExecutor,
-         'John Smith', None,
+         self.config.user, query=None,
          dateStart='today', dateEnd=True, direction=-1,
          limitDates=5, limitResults=5,
       )
+      self.dialogs=DialogList(self.dialogLoader)
 
-      self.dialogList=DialogList(self.dialogLoader)
-
-      tArr={
-         '#inbox': {'type':'main', 'name':'Inbox', 'descr':'Untagged dialogs'},
-         '#backlog': {'type':'main', 'name':'Backlog', 'descr':'Todo tasks', 'count':10},
-         '#notes': {'type':'main', 'name':'Notes', 'descr':'Useful info', 'count':2},
-         '#custom1': {'type':'main', 'name':'Custom 1', 'descr':'Created by user', 'count':5},
-         '#done': {'type':'more', 'name':'Done', 'descr':'Completed  tasks'},
-         '#spam': {'type':'more', 'name':'Spam', 'descr':'Marked as spam'},
-         '#all': {'type':'more', 'name':'All', 'descr':''},
-         '#my1': {'type':'more', 'name':'My 1', 'descr':''},
-         '#my2': {'type':'more', 'name':'My 2', 'descr':''},
-      }
-
-      self.filtersList=FiltersList(tArr)
+      self.sidebar_filters=FiltersList({
+         k:dict(v, type=v['type'].split('.', 1)[1]) for k,v in self.config.filters.items()
+         if v['type'].startswith('sidebar.')
+      })
 
       self._w=AttrWrap(Columns([
-         ('weight', 2, self.filtersList),  # sidebar
-         ('weight', 8, self.dialogList),  # wrapper
+         ('weight', 2, self.sidebar_filters),  # sidebar
+         ('weight', 8, self.dialogs),  # wrapper
       ], 0), 'style0')
-      self.childs+=[self.dialogList, self.filtersList]
+      self.childs+=[self.dialogs, self.sidebar_filters]
       #! в будущем эта карта будет модифицироваться при смене фокуса, таким образом горячие клавиши будут контекстными
       self.hotkeys({
          'f2':('One', lambda *_: print('HK-1')),
@@ -105,3 +99,7 @@ class ViewMain(ViewWithHotkeys):
          }),
       })
       super()._w_init()
+
+   def setFilters(self, data):
+      self.sidebar_filters.data=data
+      self.sidebarFilters.refresh()

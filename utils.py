@@ -12,6 +12,9 @@ datetime_today=datetime.datetime.today
 
 import gc, urwid
 
+def isInt(v):
+   return v is not True and v is not False and isinstance(v, int)
+
 class UrwidEventBubbling:
    def __init__(self, original):
       self.original_supported=original._signals._supported
