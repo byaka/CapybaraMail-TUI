@@ -40,8 +40,9 @@ class ViewBase(urwid.Frame):
 
    def _bind_events_later(self, ev):
       #? был нужен когда небыло всплытия событий, нужен ли сейчас?
-      if ev not in self._bind_later_queue: return
-      tArr=self._bind_later_queue.pop(ev)
+      # if ev not in self._bind_later_queue: return
+      # tArr=self._bind_later_queue.pop(ev)
+      pass
 
    def keypress(self, size, key):
       return super().keypress(size, key)
@@ -87,7 +88,7 @@ class ViewMain(ViewWithHotkeys):
       self.childs+=[self.dialogs, self.sidebar_filters]
       #! в будущем эта карта будет модифицироваться при смене фокуса, таким образом горячие клавиши будут контекстными
       self.hotkeys({
-         'f2':('One', lambda *_: print('HK-1')),
+         'f2':('One', self.hk_test_f1),
          'D':('Three', lambda *_: print('HK-SHIFT-D')),
          'ctrl d':('FourFive', lambda *_: print('HK-CTRL-D')),
          'meta d':('FourFive', lambda *_: print('HK-ALT-D')),
@@ -103,3 +104,6 @@ class ViewMain(ViewWithHotkeys):
    def setFilters(self, data):
       self.sidebar_filters.data=data
       self.sidebarFilters.refresh()
+
+   def hk_test_f1(self, name):
+      print('$', name, self.dialogs.focus.data[0]['dialogId'])

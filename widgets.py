@@ -196,7 +196,7 @@ class FilterItem(SelectableMultiStyleWidget,):
 
    counter=property(lambda self: self.__count, set_counter)
 
-class DialogList(urwid.AttrMap):
+class DialogList(AttrWrap):
    MOUSE_WHEEL_SPEED=3
    signals=['open', 'close']
 
@@ -210,8 +210,11 @@ class DialogList(urwid.AttrMap):
       if on_close:
          urwid.connect_signal(self, 'close', on_close)
 
+   focus=property(lambda self: self._w.focus)
+   focus_position=property(lambda self: self._w.focus_position)
+
    def keypress(self, size, key):
-      w, pos=self._w.focus, self._w.focus_position
+      w, pos=self.focus, self.focus_position
       if isinstance(w, WidgetPlaceholder):
          w2=w.original_widget
          if(
@@ -225,7 +228,7 @@ class DialogList(urwid.AttrMap):
             return
       if isinstance(w, Message):
          if self._command_map[key]==ACTIVATE:
-            print(self._w.focus.data['bodyHtml'] or self._w.focus.data['bodyPlain'])
+            print(self.focus.data['bodyHtml'] or self.focus.data['bodyPlain'])
       return super().keypress(size, key)
 
    def mouse_event(self, size, event, button, x, y, focus):
@@ -599,9 +602,9 @@ class Message(FocusableMultiStyleWidget,):
 
 class HotkeyItem(Columns,):
    _RE_f=re.compile(r'(\W*)f(\d{1,2})')
-   def __init__(self, key, name, cb):
+   def __init__(self, key, name, on_mouseLeft):
       self.key=key
-      self.cb=cb
+      self.on_mouseLeft=on_mouseLeft
       super().__init__([
          AttrWrap(Text(self._key2human(key)+' '), 'style1-reverse'),
          (len(name), Text(name)),
@@ -630,12 +633,14 @@ class HotkeyItem(Columns,):
 
    def mouse_event(self, size, event, button, x, y, focus):
       if event=='mouse press' and button==1:
-         self.cb(size, self.key)
+         self.on_mouseLeft(self.key)
       return False
 
 class HotkeyBar(AttrWrap,):
-   def __init__(self, keyMap=None):
+   def __init__(self, keyMap=None, bindArgs=None, bindKwargs=None):
       self._keyMap=keyMap or {}
+      self._bindArgs=bindArgs or ()
+      self._bindKwargs=bindKwargs or {}
       self._state=None
       self._w=Columns([], 1)
       self.refresh()
@@ -648,12 +653,13 @@ class HotkeyBar(AttrWrap,):
          n, tMap=self._state
          w=AttrWrap(Text(f'{n}:'), 'style1bold')
          res.append((w, self._w.options('pack')))
-         res.append((HotkeyItem('esc', '', self.keypress), self._w.options('pack')))
+         res.append((HotkeyItem('esc', '', on_mouseLeft=self._fire), self._w.options('pack')))
       for key, o in tMap.items():
-         res.append((HotkeyItem(key, o[0], self.keypress), self._w.options('pack')))
+         res.append((HotkeyItem(key, o[0], on_mouseLeft=self._fire), self._w.options('pack')))
       self._w.contents=res
 
-   def keypress(self, size, key):
+   def _fire(self, key=None):
+      if not key: return
       tMap=self._keyMap if self._state is None else self._state[1]
       if key=='esc' and self._state is not None:
          self._state=None
@@ -662,10 +668,16 @@ class HotkeyBar(AttrWrap,):
          n, v=tMap[key]
          print('HOTKEY', key, n, v)
          if callable(v):
-            v(n)
+            _args=(n,)+self._bindArgs
+            _kwargs=self._bindKwargs
+            v(*_args, **_kwargs)
             self._state=None
          else:
             self._state=(n, v)
          self.refresh()
       else:
-         return key
+         return False
+      return True
+
+   def keypress(self, size, key):
+      if not self._fire(key): return key
