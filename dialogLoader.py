@@ -51,11 +51,13 @@ class DialogLoader(object):
    def _load(self):
       p=dict(
          self.__params,
-         dates=(self._dateStart,self._dateStep, self._dateEnd),
+         dateIterator=(self._dateStart,self._dateStep, self._dateEnd),
          asDialogs=True,
+         checkDialogDate=True,
          returnFull=True,
          onlyCount=False,
-         returnNextDates=True,
+         returnDateIterator=True,
+         returnProcessed=False,
       )
       return self.parseResponse(self._apiExecutor.filterMessages(**p))
 
